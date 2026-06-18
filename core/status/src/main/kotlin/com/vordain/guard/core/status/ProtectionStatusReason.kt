@@ -1,0 +1,15 @@
+package com.vordain.guard.core.status
+
+enum class ProtectionStatusReason {
+    HEARTBEAT_FRESH,
+    HEARTBEAT_MISSING,
+    HEARTBEAT_STALE,
+    VPN_ACTIVE,
+    VPN_STOPPED,
+    POLICY_LOADED,
+    POLICY_MISSING,
+    ALWAYS_ON_VPN_DISABLED,
+    BLOCK_WITHOUT_VPN_DISABLED,
+    APP_PROTECTION_DISABLED,
+    LOCAL_TAMPER_DETECTED,
+}

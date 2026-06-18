@@ -23,6 +23,7 @@ include(":core:model")
 include(":core:policy")
 include(":core:crypto")
 include(":core:events")
+include(":core:status")
 include(":core:common")
 
 include(":vpn:service")
