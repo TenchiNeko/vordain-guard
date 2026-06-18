@@ -14,7 +14,7 @@ class DefaultPolicyEngine : PolicyEngine {
             )
         }
 
-        if (domain in policy.blockedDomains) {
+        if (policy.blockedDomains.any { rule -> DomainMatcher.matches(candidate = domain, rule = rule) }) {
             return PolicyEvaluation(
                 decision = PolicyDecision.Block,
                 reason = PolicyDecisionReason.BLOCKLIST_MATCH,
@@ -22,7 +22,7 @@ class DefaultPolicyEngine : PolicyEngine {
             )
         }
 
-        if (domain in policy.allowedDomains) {
+        if (policy.allowedDomains.any { rule -> DomainMatcher.matches(candidate = domain, rule = rule) }) {
             return PolicyEvaluation(
                 decision = PolicyDecision.Allow,
                 reason = PolicyDecisionReason.ALLOWLIST_MATCH,

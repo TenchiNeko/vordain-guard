@@ -184,6 +184,72 @@ class DefaultPolicyEngineTest {
     }
 
     @Test
+    fun blocklistedDomainBlocksSubdomain() {
+        val policy = basePolicy(
+            blockedDomains = setOf(DomainName.from("example.com")),
+        )
+
+        val evaluation = engine.evaluateDomain(DomainName.from("login.example.com"), policy)
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Block,
+            expectedReason = PolicyDecisionReason.BLOCKLIST_MATCH,
+            expectedShouldCreateEvent = true,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun allowlistedDomainAllowsSubdomain() {
+        val policy = basePolicy(
+            allowedDomains = setOf(DomainName.from("school.edu")),
+        )
+
+        val evaluation = engine.evaluateDomain(DomainName.from("login.school.edu"), policy)
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Allow,
+            expectedReason = PolicyDecisionReason.ALLOWLIST_MATCH,
+            expectedShouldCreateEvent = false,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun blocklistWinsWhenDomainMatchesBothAllowlistAndBlocklist() {
+        val policy = basePolicy(
+            allowedDomains = setOf(DomainName.from("example.com")),
+            blockedDomains = setOf(DomainName.from("login.example.com")),
+        )
+
+        val evaluation = engine.evaluateDomain(DomainName.from("login.example.com"), policy)
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Block,
+            expectedReason = PolicyDecisionReason.BLOCKLIST_MATCH,
+            expectedShouldCreateEvent = true,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun blocklistWinsWhenDomainSubdomainMatchesBothAllowlistAndBlocklist() {
+        val policy = basePolicy(
+            allowedDomains = setOf(DomainName.from("example.com")),
+            blockedDomains = setOf(DomainName.from("example.com")),
+        )
+
+        val evaluation = engine.evaluateDomain(DomainName.from("deep.login.example.com"), policy)
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Block,
+            expectedReason = PolicyDecisionReason.BLOCKLIST_MATCH,
+            expectedShouldCreateEvent = true,
+            actual = evaluation,
+        )
+    }
+
+    @Test
     fun corePolicyImplementationDoesNotImportAndroidPackages() {
         assertSourceTreeDoesNotContainAndroidImports(sourceRoot = repositoryRoot().resolve("core/policy/src/main/kotlin"))
     }
@@ -196,12 +262,13 @@ class DefaultPolicyEngineTest {
     private fun basePolicy(
         mode: LockdownMode = LockdownMode.STANDARD,
         blockUnknownDomains: Boolean = false,
+        allowedDomains: Set<DomainName> = setOf(DomainName.from("school.example")),
         blockedDomains: Set<DomainName> = setOf(DomainName.from("proxy.example")),
     ): Policy {
         return Policy(
             id = PolicyId("policy-test"),
             mode = mode,
-            allowedDomains = setOf(DomainName.from("school.example")),
+            allowedDomains = allowedDomains,
             blockedDomains = blockedDomains,
             allowedPackages = setOf(AppPackageName("com.school.app")),
             blockedPackages = setOf(AppPackageName("com.proxy.app")),
