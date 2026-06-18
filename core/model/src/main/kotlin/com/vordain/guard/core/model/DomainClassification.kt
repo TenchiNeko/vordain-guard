@@ -1,4 +1,4 @@
-package com.vordain.guard.core.policy
+package com.vordain.guard.core.model
 
 data class DomainClassification(
     val categories: Set<DomainCategory>,

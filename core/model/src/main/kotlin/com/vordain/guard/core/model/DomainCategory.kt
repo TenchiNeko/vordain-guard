@@ -1,4 +1,4 @@
-package com.vordain.guard.core.policy
+package com.vordain.guard.core.model
 
 enum class DomainCategory {
     PROXY_ANONYMIZER,

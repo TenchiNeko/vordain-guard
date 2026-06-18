@@ -1,6 +1,8 @@
 package com.vordain.guard.core.policy
 
 import com.vordain.guard.core.model.AppPackageName
+import com.vordain.guard.core.model.DomainCategory
+import com.vordain.guard.core.model.DomainClassification
 import com.vordain.guard.core.model.DomainName
 import com.vordain.guard.core.model.LockdownMode
 
