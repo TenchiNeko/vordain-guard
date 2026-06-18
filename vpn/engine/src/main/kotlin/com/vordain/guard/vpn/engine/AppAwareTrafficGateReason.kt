@@ -1,0 +1,13 @@
+package com.vordain.guard.vpn.engine
+
+enum class AppAwareTrafficGateReason {
+    APP_BLOCKED,
+    DOMAIN_POLICY_ALLOWED,
+    DOMAIN_POLICY_BLOCKED,
+    DOMAIN_POLICY_ALERT_ONLY,
+    COMPATIBILITY_CACHE_HIT,
+    COMPATIBILITY_LEARNED_ALLOW,
+    MONITOR_MODE,
+    MISSING_DOMAIN,
+    HARD_SAFETY_BLOCK,
+}
