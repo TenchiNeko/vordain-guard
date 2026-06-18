@@ -2,22 +2,46 @@
 
 Vordain Guard must be clearly disclosed as parental-control and family safety software.
 
-## VPN disclosure
+## Basic Positioning
 
-`VpnService` use must be core to the product. VPN usage must be disclosed clearly during setup and in store-facing materials. The app must not use deceptive traffic routing, hidden interception, or unnecessary collection of readable child activity.
+Vordain Basic uses VPN functionality for parental-control and device-security purposes:
 
-## Consent
+- Local VPN/domain filtering
+- Proxy/anonymizer blocking
+- Local cached policy enforcement
+- VPN stopped detection
+- Heartbeat/protection state
+- Parent-visible alerts
 
-User and guardian consent must be explicit. The child-device setup flow must explain that local VPN protection is used for managed-device lockdown and bypass-resistant policy enforcement.
+VPN use must be disclosed clearly during setup and in store-facing materials.
 
-## Safety boundaries
+## Consent And Visibility
 
-Vordain Guard must not include hidden spyware behavior, secret monitoring, screenshots, message-content monitoring, or covert traffic collection.
+Parent/guardian consent must be explicit. The child-device setup flow must explain that local VPN protection is used for bypass-resistant policy enforcement.
 
-## Data minimization
+The child device should show protection status:
 
-The app must not collect unnecessary readable child activity. Alerts and logs leaving the child device must be encrypted for the parent device.
+- Protected
+- Degraded
+- Stopped
+- Unknown
 
 ## Claims
 
-Do not make "unbypassable" or "impossible to bypass" claims. Use accurate wording such as bypass-resistant, managed-device lockdown, fail-closed protection, and zero-readable-data architecture.
+Avoid hidden surveillance language and avoid claims of absolute bypass prevention. Use accurate wording:
+
+- No silent bypass
+- Bypass-resistant, not unbypassable
+- Protected means actually protected
+- If protection stops, parents are told
+- If the device stops reporting, parents are told that protection is no longer confirmed
+
+## Safety Boundaries
+
+Vordain Guard must not include hidden spyware behavior, secret monitoring, screenshots, message-content monitoring, deceptive traffic routing, or covert traffic collection.
+
+## Data Minimization
+
+The app must not collect unnecessary readable child activity. Alerts and logs leaving the child device should be minimal and eventually encrypted for the parent device.
+
+The backend should be used for account, billing, encrypted relay, heartbeat, and protection state. It should not store readable child browsing history.

@@ -1,25 +1,47 @@
 # Privacy Model
 
-## Zero-readable-data goal
+## Zero-Readable-Data Goal
 
-Vordain Guard is designed around a zero-readable-data architecture for child activity. Readable child activity must never be sent to Vordain servers.
+Vordain Guard is designed around a zero-readable-data architecture for child activity. Vordain should not store readable child browsing history on company servers.
 
-## Backend boundary
+## Backend Boundary
 
-The backend, when added later, must not receive readable child activity. It should act as an encrypted relay and account/billing service only. Relay payloads should be opaque to Vordain.
+The backend, when added later, should support:
 
-## Parent-child encryption
+- Account
+- Billing
+- Encrypted relay
+- Heartbeat
+- Protection state
 
-Parent-child alerts should be encrypted for the parent device. Parent policy should be signed so the child device can verify that policy changes came from a trusted parent device.
+The backend should not receive readable child browsing history. Relay payloads should be opaque to Vordain.
 
-## Local enforcement
+## Alerts And Encryption
 
-The child device should enforce policy locally. The child device can maintain a local policy cache, local settings, and local event queue so enforcement does not depend on readable server-side analysis.
+Child activity alerts should be minimal and focused on protection/security events, such as a single blocked domain, VPN stopped state, or missing heartbeat. Alerts should eventually be encrypted parent-to-child and child-to-parent where applicable.
 
-## Exclusions in v1
+Parent policy should be signed so the child device can verify that policy changes came from a trusted parent device.
 
-Vordain Guard v1 does not include screenshots, message-content monitoring, secret monitoring, ads, selling data, behavioral tracking, or covert surveillance behavior.
+## Local Enforcement
 
-## Product posture
+The child device should enforce policy locally. The child device can maintain a local policy cache, local settings, protection state, and local event queue so enforcement does not depend on readable server-side analysis.
 
-The app must be disclosed as parental-control or family safety software. It should not be positioned as hidden monitoring software.
+## No Secret Monitoring
+
+Vordain Basic should be disclosed parental-control and family safety software. It should not be positioned as hidden monitoring software and should not secretly monitor children.
+
+## Exclusions In V1
+
+Vordain Guard v1 does not include:
+
+- Ads
+- Data resale
+- Behavioral tracking
+- Screenshots
+- Message-content monitoring
+- Secret monitoring
+- Covert surveillance behavior
+
+## Product Posture
+
+Vordain Basic is about detection and transparency first. If protection is active, parents can see that it is confirmed. If protection is degraded, stopped, or unknown, parents are told.

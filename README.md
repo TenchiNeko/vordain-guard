@@ -2,15 +2,107 @@
 
 Vordain Guard is an Android-first phone safety system from Vordain Labs LLC for high-risk family safety cases where a child is actively bypassing ordinary parental controls.
 
+The first product promise for Vordain Guard Basic is:
+
+```text
+No silent bypass.
+```
+
+Vordain Basic is bypass-resistant, not unbypassable. It is designed to make protection state visible, enforce local policy while protection is active, and alert parents quickly if protection is disabled, degraded, or no longer confirmed.
+
 The product loop is:
 
 ```text
 Policy -> Enforcement -> Event -> Encrypted Alert
 ```
 
-The child device enforces protection locally. The parent device controls policy and receives encrypted alerts. A future backend must act only as a blind encrypted relay plus billing/account service.
+## Product Tiers
 
-## What v1 is
+Vordain Basic is the first market-validation product:
+
+- Android-first
+- VPN/domain filtering
+- Proxy/anonymizer blocking
+- Local cached policy enforcement
+- VPN stopped detection
+- Heartbeat/dead-man protection status
+- Parent alerts
+- Clear status: Protected, Degraded, Stopped, Unknown
+
+Vordain Managed is a future premium tier:
+
+- Android Enterprise or MDM-style enrollment
+- Force-installed app
+- Always-on VPN lockdown
+- App uninstall and settings restrictions
+- Stronger anti-tamper controls
+
+Detection and transparency come first. Managed enforcement comes later.
+
+## Protection States
+
+Protected means actually protected:
+
+- VPN active
+- Local policy loaded
+- Heartbeat fresh
+- Protection is currently confirmed
+
+Degraded means protection is weakened:
+
+- VPN active but setup incomplete
+- Policy stale
+- Heartbeat delayed
+- Fail-closed setting not enabled
+- Another weakening condition exists
+
+Stopped means protection is known to have stopped:
+
+- VPN revoked
+- App disabled
+- Protection explicitly stopped
+- Local tamper detected
+
+Unknown means protection is no longer confirmed:
+
+- Heartbeat missing
+- Child device stopped reporting
+- Parent should not assume protection is active
+
+## Alert Paths
+
+Confirmed stopped alert:
+
+- The child app detects VPN disabled or revoked while still alive.
+- It sends a parent alert immediately when possible.
+
+Dead-man heartbeat alert:
+
+- The child device periodically proves protection is active.
+- If check-ins stop, backend or parent-side state marks protection Unknown or Stopped.
+- Parents are told that protection is no longer confirmed.
+
+If protection stops, parents are told. If the device stops reporting, parents are told that protection is no longer confirmed.
+
+## Current Architecture Status
+
+Current tested pure Kotlin pipeline:
+
+```text
+DomainName normalization
+-> policy engine
+-> proxy/anonymizer classification
+-> DNS parsing
+-> DNS traffic evaluation
+-> security event creation
+-> future heartbeat/protection state
+-> future Android VPN service adapter
+-> future parent alerts
+```
+
+The VPN service enforces policy but does not decide policy. All allow/block decisions go through `core/policy`.
+
+## What v1 Is
 
 Vordain Guard v1 includes the architecture for:
 
@@ -19,12 +111,14 @@ Vordain Guard v1 includes the architecture for:
 - Local VPN service stub
 - DNS/domain monitoring architecture
 - Allowlist/blocklist policy engine
-- Proxy/anonymizer classifier stub
+- Proxy/anonymizer classifier
+- DNS query parsing and DNS traffic evaluation
+- Security event creation
 - Parent-child encrypted alert architecture
 - VPN stopped/tamper event model
 - Setup checklist architecture
 
-## What v1 is not
+## What v1 Is Not
 
 Vordain Guard v1 does not include:
 
@@ -40,47 +134,18 @@ Vordain Guard v1 does not include:
 - Message content monitoring
 - Claims of absolute bypass prevention
 
-The intended language is bypass-resistant, managed-device lockdown, fail-closed protection, and zero-readable-data architecture.
+Vordain Basic cannot fully prevent uninstall, force-stop, VPN/settings tamper by a determined user, use of another device, friend's phone, school computer, game console browser, hidden second phone, offline content, or communication inside approved encrypted apps unless the app is blocked entirely.
 
-## Architecture summary
+## Privacy Summary
 
-The VPN service enforces policy but does not decide policy. All allow/block decisions go through `core/policy`.
+Readable child activity should not be stored on Vordain servers. Child activity alerts should be minimal and eventually encrypted between parent and child devices. The future backend should support account, billing, encrypted relay, heartbeat, and protection state.
 
-Allowed dependency direction:
+Vordain Guard v1 has no ads, no data resale, no behavioral tracking, no screenshots, no message-content monitoring, and no secret monitoring.
 
-- `apps -> features -> core`
-- `apps -> data`
-- `apps:child-app -> vpn:service`
-- `vpn:service -> vpn:engine`
-- `vpn:engine -> core:policy`
-- `vpn:classifier -> core:model`
-- `data:relay -> core:crypto`
-- `data:local -> core:model`
+## Build Notes
 
-Forbidden direction:
+This repository uses Kotlin and Gradle Kotlin DSL. Android modules are scaffolded, but this repository intentionally does not include generated files, signing keys, API keys, or production credentials.
 
-- `core -> apps`
-- `core -> features`
-- `core -> Android UI`
-- `core:policy -> vpn:service`
-- `core:policy -> data storage`
-- `vpn:engine -> parent dashboard`
-- `vpn:engine -> Compose UI`
-- `data -> Compose UI`
-- `features -> raw packet parsing`
+## Current Status
 
-## Privacy summary
-
-Readable child activity must never be sent to Vordain servers. Alerts and logs leaving the child device must be encrypted for the parent device. The backend, when added later, is a blind encrypted relay.
-
-Vordain Guard v1 has no ads, no selling data, no behavioral tracking, no screenshots, no message-content monitoring, and no secret monitoring.
-
-## Build notes
-
-This repository uses Kotlin and Gradle Kotlin DSL. Android modules are scaffolded, but this repository intentionally does not include generated files, binary files, signing keys, API keys, or production credentials.
-
-This scaffold does not install dependencies and does not require Android Studio to inspect the code.
-
-## Current status
-
-Scaffold only. This is not production-ready software.
+Scaffold and pure Kotlin foundation. This is not production-ready software.
