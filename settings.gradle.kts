@@ -33,6 +33,7 @@ include(":vpn:dns")
 
 include(":data:local")
 include(":data:relay")
+include(":data:outbox")
 
 include(":features:pairing")
 include(":features:parent-dashboard")
