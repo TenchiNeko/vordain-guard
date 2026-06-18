@@ -1,0 +1,43 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "vordain-guard"
+
+include(":apps:parent-app")
+include(":apps:child-app")
+
+include(":core:model")
+include(":core:policy")
+include(":core:crypto")
+include(":core:events")
+include(":core:common")
+
+include(":vpn:service")
+include(":vpn:engine")
+include(":vpn:classifier")
+include(":vpn:dns")
+
+include(":data:local")
+include(":data:relay")
+
+include(":features:pairing")
+include(":features:parent-dashboard")
+include(":features:child-status")
+include(":features:policy-editor")
+include(":features:alerts")
+include(":features:setup-checklist")
+
+include(":testkit")

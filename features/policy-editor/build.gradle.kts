@@ -1,0 +1,9 @@
+plugins {
+    kotlin("jvm")
+}
+
+dependencies {
+    implementation(project(":core:model"))
+    implementation(project(":core:policy"))
+    implementation(project(":data:local"))
+}

@@ -1,0 +1,13 @@
+package com.vordain.guard.core.events
+
+enum class SecurityEventType {
+    VPN_STOPPED,
+    VPN_RESTARTED,
+    PROXY_DOMAIN_BLOCKED,
+    UNKNOWN_DOMAIN_BLOCKED,
+    BLOCKED_DOMAIN,
+    UNAPPROVED_APP_NETWORK_ATTEMPT,
+    POLICY_UPDATED,
+    CHILD_DEVICE_OFFLINE,
+    TAMPER_SUSPECTED,
+}
