@@ -6,6 +6,4 @@ interface RelayClient {
      * must not accept readable child activity or decrypt parent-bound alerts.
      */
     fun send(message: RelayMessage): RelaySendResult
-
-    fun receivePending(): List<RelayMessage>
 }
