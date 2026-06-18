@@ -34,6 +34,7 @@ include(":vpn:dns")
 include(":data:local")
 include(":data:relay")
 include(":data:outbox")
+include(":data:heartbeat")
 
 include(":features:pairing")
 include(":features:parent-dashboard")
