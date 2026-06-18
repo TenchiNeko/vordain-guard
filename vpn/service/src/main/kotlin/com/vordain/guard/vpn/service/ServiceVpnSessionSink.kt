@@ -16,8 +16,16 @@ class ServiceVpnSessionSink(
     var lastTransition: VpnSessionTransition? = null
         private set
 
+    override fun onVpnStartRequested() {
+        transition(VpnSessionCommand.Start)
+    }
+
     override fun onVpnStarted() {
         transition(VpnSessionCommand.MarkStarted)
+    }
+
+    override fun onVpnStopRequested() {
+        transition(VpnSessionCommand.Stop)
     }
 
     override fun onVpnStopped() {

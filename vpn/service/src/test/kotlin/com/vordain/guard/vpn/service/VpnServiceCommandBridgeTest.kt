@@ -1,0 +1,174 @@
+package com.vordain.guard.vpn.service
+
+import java.io.File
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class VpnServiceCommandBridgeTest {
+    @Test
+    fun startActionMapsToStartCommand() {
+        val sink = RecordingVpnSessionSink()
+
+        val result = VpnServiceCommandBridge(sink)
+            .handleAction(VordainVpnServiceActions.ACTION_START_PROTECTION)
+
+        assertEquals(VpnServiceCommandResult.HandledStart, result)
+        assertEquals(listOf("start-requested"), sink.calls)
+    }
+
+    @Test
+    fun stopActionMapsToStopCommand() {
+        val sink = RecordingVpnSessionSink()
+
+        val result = VpnServiceCommandBridge(sink)
+            .handleAction(VordainVpnServiceActions.ACTION_STOP_PROTECTION)
+
+        assertEquals(VpnServiceCommandResult.HandledStop, result)
+        assertEquals(listOf("stop-requested"), sink.calls)
+    }
+
+    @Test
+    fun unknownActionIsSafeNoOp() {
+        val sink = RecordingVpnSessionSink()
+
+        val result = VpnServiceCommandBridge(sink).handleAction("unknown")
+
+        assertEquals(VpnServiceCommandResult.Ignored, result)
+        assertTrue(sink.calls.isEmpty())
+    }
+
+    @Test
+    fun nullActionIsSafeNoOp() {
+        val sink = RecordingVpnSessionSink()
+
+        val result = VpnServiceCommandBridge(sink).handleAction(null)
+
+        assertEquals(VpnServiceCommandResult.Ignored, result)
+        assertTrue(sink.calls.isEmpty())
+    }
+
+    @Test
+    fun revokedCallbackMapsToSessionSink() {
+        val sink = RecordingVpnSessionSink()
+
+        sink.onVpnRevoked()
+
+        assertEquals(listOf("revoked"), sink.calls)
+    }
+
+    @Test
+    fun noOpDefaultBridgeDoesNotThrow() {
+        VpnServiceCommandBridge(VpnSessionSink.NoOp)
+            .handleAction(VordainVpnServiceActions.ACTION_START_PROTECTION)
+        VpnServiceCommandBridge(VpnSessionSink.NoOp)
+            .handleAction(VordainVpnServiceActions.ACTION_STOP_PROTECTION)
+        VpnServiceCommandBridge(VpnSessionSink.NoOp).handleAction("unknown")
+    }
+
+    @Test
+    fun notificationTextContainsNoSensitiveActivityData() {
+        val notificationText = listOf(
+            VpnForegroundNotification.TITLE,
+            VpnForegroundNotification.BODY,
+            VpnForegroundNotification.CHANNEL_NAME,
+        ).joinToString(" ")
+
+        assertFalse(notificationText.contains("domain", ignoreCase = true))
+        assertFalse(notificationText.contains("browser", ignoreCase = true))
+        assertFalse(notificationText.contains("website", ignoreCase = true))
+        assertFalse(notificationText.contains("app package", ignoreCase = true))
+        assertFalse(notificationText.contains("message", ignoreCase = true))
+    }
+
+    @Test
+    fun intentFactorySourceUsesExpectedActionStrings() {
+        val source = repositoryRoot()
+            .resolve("vpn/service/src/main/kotlin/com/vordain/guard/vpn/service/VordainVpnServiceIntents.kt")
+            .readText()
+
+        assertTrue(source.contains("ACTION_START_PROTECTION"))
+        assertTrue(source.contains("ACTION_STOP_PROTECTION"))
+        assertTrue(source.contains("VordainVpnService::class.java"))
+    }
+
+    @Test
+    fun vordainVpnServiceSourceHandlesExplicitStartAndStopActions() {
+        val source = serviceSource()
+
+        assertTrue(source.contains("override fun onStartCommand"))
+        assertTrue(source.contains("HandledStart"))
+        assertTrue(source.contains("HandledStop"))
+        assertTrue(source.contains("startForeground("))
+        assertTrue(source.contains("stopForeground("))
+    }
+
+    @Test
+    fun vordainVpnServiceSourceDoesNotContainPolicyDnsRelayOrPacketLogic() {
+        val source = serviceSource()
+
+        assertDoesNotContain(source, "PolicyEngine")
+        assertDoesNotContain(source, "DomainTrafficEvaluator")
+        assertDoesNotContain(source, "DnsMessageParser")
+        assertDoesNotContain(source, "RelayClient")
+        assertDoesNotContain(source, "data.outbox")
+        assertDoesNotContain(source, "data.relay")
+        assertDoesNotContain(source, "backend")
+        assertDoesNotContain(source, "read(")
+        assertDoesNotContain(source, "write(")
+        assertDoesNotContain(source, "FileDescriptor")
+        assertDoesNotContain(source, "DatagramSocket")
+        assertDoesNotContain(source, "Socket(")
+    }
+
+    private class RecordingVpnSessionSink : VpnSessionSink {
+        val calls = mutableListOf<String>()
+
+        override fun onVpnStartRequested() {
+            calls += "start-requested"
+        }
+
+        override fun onVpnStarted() {
+            calls += "started"
+        }
+
+        override fun onVpnStopRequested() {
+            calls += "stop-requested"
+        }
+
+        override fun onVpnStopped() {
+            calls += "stopped"
+        }
+
+        override fun onVpnRevoked() {
+            calls += "revoked"
+        }
+    }
+
+    private fun serviceSource(): String {
+        return repositoryRoot()
+            .resolve("vpn/service/src/main/kotlin/com/vordain/guard/vpn/service/VordainVpnService.kt")
+            .readText()
+    }
+
+    private fun assertDoesNotContain(source: String, forbiddenText: String) {
+        assertTrue(
+            actual = !source.contains(forbiddenText),
+            message = "Forbidden text $forbiddenText found in source",
+        )
+    }
+
+    private fun repositoryRoot(): File {
+        val userDir = System.getProperty("user.dir") ?: "."
+        var current = File(userDir).absoluteFile
+        while (true) {
+            if (current.resolve("settings.gradle.kts").isFile) {
+                return current
+            }
+            val parent = current.parentFile
+                ?: error("Could not find repository root from $userDir")
+            current = parent
+        }
+    }
+}

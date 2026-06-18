@@ -7,12 +7,30 @@ import android.os.IBinder
 class VordainVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
-        sessionSink.onVpnStarted()
         lifecycleSink.onVpnStarted()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
         return super.onBind(intent)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val result = VpnServiceCommandBridge(sessionSink).handleAction(intent?.action)
+        return when (result) {
+            VpnServiceCommandResult.HandledStart -> {
+                startForeground(
+                    VpnForegroundNotification.NOTIFICATION_ID,
+                    VpnForegroundNotification.build(this),
+                )
+                START_STICKY
+            }
+            VpnServiceCommandResult.HandledStop -> {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
+                START_NOT_STICKY
+            }
+            VpnServiceCommandResult.Ignored -> START_NOT_STICKY
+        }
     }
 
     override fun onRevoke() {
@@ -39,6 +57,6 @@ class VordainVpnService : VpnService() {
 
     companion object {
         var lifecycleSink: VpnLifecycleSink = VpnLifecycleSink.NoOp
-        var sessionSink: VpnSessionSink = VpnSessionSink.NoOp
+        var sessionSink: VpnSessionSink = DefaultServiceVpnSessionSinkFactory.create()
     }
 }
