@@ -6,6 +6,18 @@ import com.vordain.guard.core.model.LockdownMode
 
 class DefaultPolicyEngine : PolicyEngine {
     override fun evaluateDomain(domain: DomainName, policy: Policy): PolicyEvaluation {
+        return evaluateDomain(
+            domain = domain,
+            policy = policy,
+            classification = DomainClassification.Unknown,
+        )
+    }
+
+    override fun evaluateDomain(
+        domain: DomainName,
+        policy: Policy,
+        classification: DomainClassification,
+    ): PolicyEvaluation {
         if (domain.value.isBlank()) {
             return PolicyEvaluation(
                 decision = PolicyDecision.Block,
@@ -18,6 +30,14 @@ class DefaultPolicyEngine : PolicyEngine {
             return PolicyEvaluation(
                 decision = PolicyDecision.Block,
                 reason = PolicyDecisionReason.BLOCKLIST_MATCH,
+                shouldCreateEvent = true,
+            )
+        }
+
+        if (policy.blockKnownProxyDomains && classification.contains(DomainCategory.PROXY_ANONYMIZER)) {
+            return PolicyEvaluation(
+                decision = PolicyDecision.Block,
+                reason = PolicyDecisionReason.PROXY_CATEGORY_BLOCKED,
                 shouldCreateEvent = true,
             )
         }

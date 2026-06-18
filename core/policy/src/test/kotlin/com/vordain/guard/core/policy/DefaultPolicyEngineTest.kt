@@ -250,6 +250,140 @@ class DefaultPolicyEngineTest {
     }
 
     @Test
+    fun proxyAnonymizerSignalBlocksWhenPolicyBlocksKnownProxyDomains() {
+        val evaluation = engine.evaluateDomain(
+            domain = DomainName.from("proxy-service.example"),
+            policy = basePolicy(blockKnownProxyDomains = true),
+            classification = DomainClassification.of(DomainCategory.PROXY_ANONYMIZER),
+        )
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Block,
+            expectedReason = PolicyDecisionReason.PROXY_CATEGORY_BLOCKED,
+            expectedShouldCreateEvent = true,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun proxyAnonymizerSignalDoesNotBlockWhenPolicyDoesNotBlockKnownProxyDomains() {
+        val evaluation = engine.evaluateDomain(
+            domain = DomainName.from("proxy-service.example"),
+            policy = basePolicy(blockKnownProxyDomains = false),
+            classification = DomainClassification.of(DomainCategory.PROXY_ANONYMIZER),
+        )
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Allow,
+            expectedReason = PolicyDecisionReason.NO_MATCH,
+            expectedShouldCreateEvent = false,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun explicitBlocklistBlocksBeforeProxyCategoryBehavior() {
+        val evaluation = engine.evaluateDomain(
+            domain = DomainName.from("proxy.example"),
+            policy = basePolicy(
+                blockedDomains = setOf(DomainName.from("proxy.example")),
+                blockKnownProxyDomains = true,
+            ),
+            classification = DomainClassification.of(DomainCategory.PROXY_ANONYMIZER),
+        )
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Block,
+            expectedReason = PolicyDecisionReason.BLOCKLIST_MATCH,
+            expectedShouldCreateEvent = true,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun proxyAnonymizerCategoryBlockWinsOverAllowlistWhenPolicyBlocksKnownProxyDomains() {
+        val evaluation = engine.evaluateDomain(
+            domain = DomainName.from("proxy.school.example"),
+            policy = basePolicy(
+                allowedDomains = setOf(DomainName.from("school.example")),
+                blockedDomains = emptySet(),
+                blockKnownProxyDomains = true,
+            ),
+            classification = DomainClassification.of(DomainCategory.PROXY_ANONYMIZER),
+        )
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Block,
+            expectedReason = PolicyDecisionReason.PROXY_CATEGORY_BLOCKED,
+            expectedShouldCreateEvent = true,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun unknownCategoryKeepsStandardUnknownDomainBehavior() {
+        val evaluation = engine.evaluateDomain(
+            domain = DomainName.from("unknown.example"),
+            policy = basePolicy(mode = LockdownMode.STANDARD, blockUnknownDomains = false),
+            classification = DomainClassification.Unknown,
+        )
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Allow,
+            expectedReason = PolicyDecisionReason.NO_MATCH,
+            expectedShouldCreateEvent = false,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun unknownCategoryKeepsMonitorOnlyUnknownDomainBehavior() {
+        val evaluation = engine.evaluateDomain(
+            domain = DomainName.from("unknown.example"),
+            policy = basePolicy(mode = LockdownMode.MONITOR_ONLY, blockUnknownDomains = false),
+            classification = DomainClassification.Unknown,
+        )
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.AlertOnly,
+            expectedReason = PolicyDecisionReason.NO_MATCH,
+            expectedShouldCreateEvent = true,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun crisisLockdownRemainsStrictForUnknownCategoryDomain() {
+        val evaluation = engine.evaluateDomain(
+            domain = DomainName.from("unknown.example"),
+            policy = basePolicy(mode = LockdownMode.CRISIS_LOCKDOWN, blockUnknownDomains = false),
+            classification = DomainClassification.Unknown,
+        )
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Block,
+            expectedReason = PolicyDecisionReason.LOCKDOWN_MODE,
+            expectedShouldCreateEvent = true,
+            actual = evaluation,
+        )
+    }
+
+    @Test
+    fun existingNoSignalDomainEvaluationPathStillUsesUnknownClassification() {
+        val evaluation = engine.evaluateDomain(
+            domain = DomainName.from("unknown.example"),
+            policy = basePolicy(mode = LockdownMode.STANDARD, blockUnknownDomains = false),
+        )
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Allow,
+            expectedReason = PolicyDecisionReason.NO_MATCH,
+            expectedShouldCreateEvent = false,
+            actual = evaluation,
+        )
+    }
+
+    @Test
     fun corePolicyImplementationDoesNotImportAndroidPackages() {
         assertSourceTreeDoesNotContainAndroidImports(sourceRoot = repositoryRoot().resolve("core/policy/src/main/kotlin"))
     }
@@ -262,6 +396,7 @@ class DefaultPolicyEngineTest {
     private fun basePolicy(
         mode: LockdownMode = LockdownMode.STANDARD,
         blockUnknownDomains: Boolean = false,
+        blockKnownProxyDomains: Boolean = true,
         allowedDomains: Set<DomainName> = setOf(DomainName.from("school.example")),
         blockedDomains: Set<DomainName> = setOf(DomainName.from("proxy.example")),
     ): Policy {
@@ -273,7 +408,7 @@ class DefaultPolicyEngineTest {
             allowedPackages = setOf(AppPackageName("com.school.app")),
             blockedPackages = setOf(AppPackageName("com.proxy.app")),
             blockUnknownDomains = blockUnknownDomains,
-            blockKnownProxyDomains = true,
+            blockKnownProxyDomains = blockKnownProxyDomains,
         )
     }
 
