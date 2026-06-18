@@ -17,6 +17,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:model"))
     implementation(project(":features:child-status"))
     implementation(project(":features:setup-checklist"))
     implementation(project(":data:local"))
