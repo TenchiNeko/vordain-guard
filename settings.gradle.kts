@@ -31,6 +31,7 @@ include(":core:common")
 
 include(":vpn:service")
 include(":vpn:lifecycle")
+include(":vpn:session")
 include(":vpn:engine")
 include(":vpn:classifier")
 include(":vpn:dns")

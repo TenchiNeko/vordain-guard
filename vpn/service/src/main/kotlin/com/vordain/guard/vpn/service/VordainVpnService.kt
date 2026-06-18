@@ -7,6 +7,7 @@ import android.os.IBinder
 class VordainVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
+        sessionSink.onVpnStarted()
         lifecycleSink.onVpnStarted()
     }
 
@@ -15,11 +16,13 @@ class VordainVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        sessionSink.onVpnRevoked()
         lifecycleSink.onVpnRevoked()
         super.onRevoke()
     }
 
     override fun onDestroy() {
+        sessionSink.onVpnStopped()
         lifecycleSink.onVpnStopped()
         super.onDestroy()
     }
@@ -36,5 +39,6 @@ class VordainVpnService : VpnService() {
 
     companion object {
         var lifecycleSink: VpnLifecycleSink = VpnLifecycleSink.NoOp
+        var sessionSink: VpnSessionSink = VpnSessionSink.NoOp
     }
 }
