@@ -35,6 +35,7 @@ include(":data:local")
 include(":data:relay")
 include(":data:outbox")
 include(":data:heartbeat")
+include(":data:review")
 
 include(":features:pairing")
 include(":features:parent-dashboard")
