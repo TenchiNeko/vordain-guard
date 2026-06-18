@@ -32,6 +32,16 @@ VpnService is only a platform adapter. It starts/stops the tunnel and forwards t
 
 All allow/block decisions must go through core/policy.
 
+Compatibility Mode may run in vpn/engine, but it must remain local and must not override hard safety blocks.
+
+Browsers, search apps, and unknown web apps should default to Strict mode.
+
+Signed intelligence bundles must not be built from passive child browsing history in v1.
+
+Parent Review is parent-initiated and minimized.
+
+Entitlements and subscriptions must stay separate from child activity.
+
 ## Event rule
 
 All parent-visible security events must be represented as core/events/SecurityEvent.

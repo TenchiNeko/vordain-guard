@@ -45,3 +45,9 @@ Vordain Guard must not include hidden spyware behavior, secret monitoring, scree
 The app must not collect unnecessary readable child activity. Alerts and logs leaving the child device should be minimal and eventually encrypted for the parent device.
 
 The backend should be used for account, billing, encrypted relay, heartbeat, and protection state. It should not store readable child browsing history.
+
+Compatibility Mode, local intelligence, and local policy evaluation should be disclosed as part of parental-control/device-security functionality. They must not be positioned as hidden surveillance.
+
+Parent Review should be described as a parent-initiated support/review workflow for a specific site or app problem, not passive telemetry.
+
+Subscription entitlement checks must remain separate from child activity and must not require readable child browsing data.

@@ -7,6 +7,9 @@
 - Domain classification
 - DNS parser
 - DNS traffic evaluation
+- App-aware Compatibility Mode contracts
+- Local intelligence bundle contracts
+- Subscription entitlement contracts
 
 ## Phase 2: Events And Protection State
 
@@ -14,6 +17,7 @@
 - Heartbeat/protection state model
 - Encrypted event queue
 - Parent-visible alerts
+- Parent-initiated review request contracts
 
 ## Phase 3: Android Child Protection
 
@@ -27,6 +31,7 @@
 
 - Parent app/dashboard
 - Alert review
+- Parent-initiated Vordain Review flow
 - Setup checklist
 - Subscription
 - Play Store compliant beta

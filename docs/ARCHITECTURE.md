@@ -96,7 +96,9 @@ DomainName normalization
 -> DNS parsing
 -> DNS traffic evaluation
 -> security event creation
--> future heartbeat/protection state
+-> heartbeat/protection state
+-> local event queue
+-> encrypted relay/outbox contracts
 -> future Android VPN service adapter
 -> future parent alerts
 ```
@@ -136,6 +138,10 @@ Policy logic is pure Kotlin and has no Android UI, storage, or VPN service depen
 
 `vpn/engine` orchestrates classifier signals, DNS parse results, policy evaluation, and traffic decisions. It can depend on `core/policy`, but it must not own policy rules.
 
+App-aware Compatibility Mode also belongs in `vpn/engine`. It may use local app compatibility profiles and local intelligence records to decide whether an approved app can use required service domains. It must still call the domain traffic evaluator and policy engine for domain policy. Browsers, search apps, and unknown web apps should default to Strict mode instead of Compatibility Mode.
+
+Compatibility Mode may relax unknown-domain blocking for approved apps, but it must not override hard safety blocks. Explicit blocklists, proxy/anonymizer signals, private DNS or VPN infrastructure intelligence, and crisis lockdown always win.
+
 The Android `VpnService` is only a future platform adapter. Packet handling and Android service lifecycle belong outside the pure Kotlin decision path.
 
 ## Crypto/Event Responsibilities
@@ -144,11 +150,21 @@ The Android `VpnService` is only a future platform adapter. Packet handling and 
 
 `core/crypto` defines interfaces for device keys, encryption, signing, and key storage. Real crypto is intentionally deferred until the key model is reviewed.
 
+## Intelligence Responsibilities
+
+`core/intelligence` defines signed local intelligence and app compatibility profile contracts. These bundles support local proxy/anonymizer intelligence, app dependency domains, and future signed rule updates. They must not be built from passive child browsing history in v1.
+
+The intelligence layer is pure Kotlin metadata. It does not crawl, upload telemetry, perform network calls, or make policy decisions.
+
 ## Data/Relay Responsibilities
 
 `data/local` owns local policy cache, settings, pairing data, audit history, and event queue interfaces.
 
 `data/relay` defines a relay client interface only. A future backend should act as an encrypted relay, account, billing, heartbeat, and protection-state service. It should not receive readable child browsing history.
+
+`data/review` defines parent-initiated review request contracts. Review subjects are minimized to a domain/app issue and are not passive traffic logs.
+
+`core/entitlement` defines local subscription entitlement leases and feature defaults. Entitlement logic is separate from child activity, traffic, events, domains, and app usage.
 
 ## Dependency Direction
 
@@ -159,6 +175,7 @@ Allowed direction:
 - `apps:child-app -> vpn:service`
 - `vpn:service -> vpn:engine`
 - `vpn:engine -> core:policy`
+- `vpn:engine -> core:intelligence`
 - `vpn:engine -> vpn:dns`
 - `vpn:engine -> vpn:classifier`
 - `vpn:dns -> core:model`
@@ -180,6 +197,9 @@ Forbidden direction:
 - `vpn:dns -> core:policy`
 - `vpn:dns -> vpn:engine`
 - `vpn:classifier -> core:policy`
+- `core:intelligence -> vpn`
+- `core:entitlement -> data`
+- `core:entitlement -> vpn`
 - `vpn:engine -> parent dashboard`
 - `vpn:engine -> Compose UI`
 - `data -> Compose UI`
@@ -189,6 +209,6 @@ Forbidden direction:
 
 ## MVP Boundaries
 
-Vordain Guard v1 includes an Android parent app skeleton, Android child app skeleton, local VPN service stub, DNS/domain monitoring architecture, allowlist/blocklist policy engine, proxy/anonymizer classifier, DNS parser, DNS traffic evaluation, security event creation, parent-child encrypted alert architecture, VPN stopped/tamper event model, and setup checklist architecture.
+Vordain Guard v1 includes an Android parent app skeleton, Android child app skeleton, local VPN service stub, DNS/domain monitoring architecture, allowlist/blocklist policy engine, proxy/anonymizer classifier, DNS parser, DNS traffic evaluation, app-aware Compatibility Mode contracts, local intelligence contracts, security event creation, parent-child encrypted alert architecture, VPN stopped/tamper event model, parent review contracts, entitlement contracts, and setup checklist architecture.
 
 Vordain Guard v1 does not include iOS, managed-device enrollment, full traffic decryption, AI monitoring, social media message scanning, location tracking, production backend, subscription billing, screenshots, message content monitoring, or any claim of absolute bypass prevention.

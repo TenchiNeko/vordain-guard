@@ -25,6 +25,7 @@ include(":core:crypto")
 include(":core:events")
 include(":core:status")
 include(":core:entitlement")
+include(":core:intelligence")
 include(":core:common")
 
 include(":vpn:service")

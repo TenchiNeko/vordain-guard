@@ -26,6 +26,14 @@ Parent policy should be signed so the child device can verify that policy change
 
 The child device should enforce policy locally. The child device can maintain a local policy cache, local settings, protection state, and local event queue so enforcement does not depend on readable server-side analysis.
 
+Compatibility Mode runs locally. Approved apps can learn/cache required service domains on device, but this must not become a passive readable browsing feed to Vordain.
+
+Signed intelligence bundles are local metadata for compatibility and risk signals. They must not be built from passive child browsing history in v1.
+
+Parent Review is parent-initiated and minimized. A parent may submit a specific domain or app issue, but full URLs, query strings, screenshots, messages, and traffic logs should not be submitted.
+
+Entitlements and subscriptions are separate from child activity. Billing status should be represented by entitlement leases and feature flags, not by child traffic or alert contents.
+
 ## No Secret Monitoring
 
 Vordain Basic should be disclosed parental-control and family safety software. It should not be positioned as hidden monitoring software and should not secretly monitor children.

@@ -95,12 +95,20 @@ DomainName normalization
 -> DNS parsing
 -> DNS traffic evaluation
 -> security event creation
--> future heartbeat/protection state
+-> heartbeat/protection state
+-> local event queue
+-> encrypted relay/outbox contracts
 -> future Android VPN service adapter
 -> future parent alerts
 ```
 
 The VPN service enforces policy but does not decide policy. All allow/block decisions go through `core/policy`.
+
+Compatibility Mode is local. Approved apps can learn and cache required service domains on device so apps such as school or streaming apps can keep working without broad manual allowlists. Browsers, search apps, and unknown web apps should default to Strict mode. Hard safety blocks always win, including explicit blocklists, proxy/anonymizer signals, private DNS or VPN infrastructure intelligence, and crisis lockdown.
+
+Parent Review is parent-initiated and minimized. A parent may submit a specific domain or app issue for review, but this is not passive browsing telemetry.
+
+Subscription entitlements are separate from child safety data. Paid access is modeled through local entitlement leases and feature flags, not through readable child activity.
 
 ## What v1 Is
 
@@ -114,6 +122,12 @@ Vordain Guard v1 includes the architecture for:
 - Proxy/anonymizer classifier
 - DNS query parsing and DNS traffic evaluation
 - Security event creation
+- Heartbeat/protection state evaluation
+- Local event queue
+- Encrypted relay and outbox contracts
+- App-aware Compatibility Mode contracts
+- Parent-initiated review request contracts
+- Subscription entitlement contracts
 - Parent-child encrypted alert architecture
 - VPN stopped/tamper event model
 - Setup checklist architecture

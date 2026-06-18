@@ -24,7 +24,10 @@ Vordain Basic is designed so parents do not silently assume protection is active
 - Child uses alternate browser or app path where detectable
 - Child uses cellular instead of home Wi-Fi
 - Protection heartbeat becomes stale or missing
+- Approved app needs hidden service domains to function
 - Parent is non-technical and needs plain-English alerts
+
+Compatibility Mode helps approved apps work locally by allowing required service domains when no hard safety block applies. Browsers, search apps, and unknown web apps should stay in Strict mode. Hard safety blocks always win.
 
 ## Protection States
 
@@ -81,6 +84,7 @@ This prevents silent failure even when the child app cannot send a final alert.
 - Hidden second device or hidden second phone
 - Offline content
 - Approved encrypted apps unless blocked entirely
+- Compatibility dependencies that have not yet been reviewed or learned locally
 - Factory reset without managed-device enrollment
 - Physical coercion or stolen parent passcode
 

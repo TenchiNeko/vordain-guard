@@ -5,6 +5,7 @@ plugins {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:events"))
+    implementation(project(":core:intelligence"))
     implementation(project(":core:policy"))
     implementation(project(":vpn:classifier"))
     implementation(project(":vpn:dns"))
