@@ -22,5 +22,10 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":core:model"))
+    implementation(project(":vpn:lifecycle"))
     implementation(project(":vpn:engine"))
+    testImplementation(project(":core:events"))
+    testImplementation(project(":data:local"))
+    testImplementation(kotlin("test"))
 }
