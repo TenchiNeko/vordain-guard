@@ -1,0 +1,11 @@
+package com.vordain.guard.core.entitlement
+
+enum class EntitlementFeature {
+    LOCAL_VPN_FILTERING,
+    HEARTBEAT_ALERTS,
+    ENCRYPTED_PARENT_RELAY,
+    MULTI_CHILD_DEVICES,
+    PARENT_REVIEW_REQUESTS,
+    COMPATIBILITY_LEARNING,
+    MANAGED_DEVICE_LOCKDOWN,
+}
