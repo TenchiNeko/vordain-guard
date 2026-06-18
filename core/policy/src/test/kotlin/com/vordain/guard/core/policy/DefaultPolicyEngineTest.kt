@@ -7,6 +7,7 @@ import com.vordain.guard.core.model.PolicyId
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class DefaultPolicyEngineTest {
@@ -136,15 +137,10 @@ class DefaultPolicyEngineTest {
     }
 
     @Test
-    fun invalidDomainReturnsInvalidInputReason() {
-        val evaluation = engine.evaluateDomain(DomainName.from("   "), basePolicy())
-
-        assertEvaluation(
-            expectedDecision = PolicyDecision.Block,
-            expectedReason = PolicyDecisionReason.INVALID_INPUT,
-            expectedShouldCreateEvent = true,
-            actual = evaluation,
-        )
+    fun blankDomainIsRejectedBeforePolicyEvaluation() {
+        assertFailsWith<IllegalArgumentException> {
+            DomainName.from("   ")
+        }
     }
 
     @Test
@@ -172,6 +168,22 @@ class DefaultPolicyEngineTest {
     }
 
     @Test
+    fun normalizedDomainMatchesBlockedPolicyEntry() {
+        val policy = basePolicy(
+            blockedDomains = setOf(DomainName.from("example.com")),
+        )
+
+        val evaluation = engine.evaluateDomain(DomainName.from("EXAMPLE.COM."), policy)
+
+        assertEvaluation(
+            expectedDecision = PolicyDecision.Block,
+            expectedReason = PolicyDecisionReason.BLOCKLIST_MATCH,
+            expectedShouldCreateEvent = true,
+            actual = evaluation,
+        )
+    }
+
+    @Test
     fun corePolicyImplementationDoesNotImportAndroidPackages() {
         assertSourceTreeDoesNotContainAndroidImports(sourceRoot = repositoryRoot().resolve("core/policy/src/main/kotlin"))
     }
@@ -184,12 +196,13 @@ class DefaultPolicyEngineTest {
     private fun basePolicy(
         mode: LockdownMode = LockdownMode.STANDARD,
         blockUnknownDomains: Boolean = false,
+        blockedDomains: Set<DomainName> = setOf(DomainName.from("proxy.example")),
     ): Policy {
         return Policy(
             id = PolicyId("policy-test"),
             mode = mode,
             allowedDomains = setOf(DomainName.from("school.example")),
-            blockedDomains = setOf(DomainName.from("proxy.example")),
+            blockedDomains = blockedDomains,
             allowedPackages = setOf(AppPackageName("com.school.app")),
             blockedPackages = setOf(AppPackageName("com.proxy.app")),
             blockUnknownDomains = blockUnknownDomains,
