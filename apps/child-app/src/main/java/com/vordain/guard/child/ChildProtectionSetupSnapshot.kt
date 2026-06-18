@@ -7,8 +7,8 @@ data class ChildProtectionSetupSnapshot(
     val protectionState: ProtectionState,
 ) {
     init {
-        require(protectionState != ProtectionState.ACTIVE || checklist.isComplete) {
-            "Active protection requires a complete local setup checklist"
+        require(protectionState != ProtectionState.PROTECTED || checklist.isComplete) {
+            "Protected state requires a complete local setup checklist"
         }
     }
 }
