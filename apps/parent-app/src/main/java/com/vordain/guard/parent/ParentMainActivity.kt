@@ -157,6 +157,8 @@ class ParentMainActivity : Activity() {
 
         layout.addView(sectionTitle("Child hardening setup"))
         layout.addView(valueLabel("This debug report is parent/child copy-paste only. Production will use encrypted delivery later.", 14f))
+        layout.addView(valueLabel("Vordain does not receive or record the PIN.", 14f))
+        layout.addView(valueLabel("Compromise signals are based on setup state changes outside parent-authorized maintenance windows.", 14f))
         layout.addView(labeledField("Paste setup report", setupReportInput))
         layout.addView(button("Decode setup report") {
             decodeHardeningSetupReport()
@@ -334,6 +336,8 @@ class ParentMainActivity : Activity() {
             "Summary status: ${snapshot.summaryStatus.toDisplayLabel()}",
             "Child device id: ${snapshot.childDeviceId.value}",
             "Generated at: ${snapshot.generatedAtMillis}",
+            "Maintenance window: ${snapshot.activeMaintenanceWindow?.windowId ?: "none"}",
+            "PIN compromise signal: ${snapshot.latestPinCompromiseSignal.toDisplayLabel()}",
         )
         listOf(
             HardeningSetupStep.VPN_PERMISSION,
@@ -343,7 +347,15 @@ class ParentMainActivity : Activity() {
             HardeningSetupStep.SCREEN_PINNING_WITH_PIN,
             HardeningSetupStep.BATTERY_OPTIMIZATION,
             HardeningSetupStep.PRIVATE_DNS_REVIEW,
-            HardeningSetupStep.UNKNOWN_SOURCES_REVIEW,
+            HardeningSetupStep.UNKNOWN_SOURCES_REVIEWED,
+            HardeningSetupStep.DEVELOPER_OPTIONS_DISABLED,
+            HardeningSetupStep.USB_DEBUGGING_DISABLED,
+            HardeningSetupStep.WIRELESS_DEBUGGING_DISABLED,
+            HardeningSetupStep.NO_UNRESTRICTED_SECONDARY_USERS,
+            HardeningSetupStep.NO_UNRESTRICTED_WORK_PROFILE,
+            HardeningSetupStep.SETTINGS_LOCK_PARENT_PIN_ONLY,
+            HardeningSetupStep.PARENT_PIN_NOT_SHARED,
+            HardeningSetupStep.PIN_COMPROMISE_REVIEW,
         ).forEach { step ->
             val item = snapshot.itemFor(step)
             lines += "${step.toDisplayLabel()}: ${item.status.toDisplayLabel()} / ${item.evidenceType.toDisplayLabel()} / ${item.note ?: "No note"}"
@@ -440,6 +452,11 @@ class ParentMainActivity : Activity() {
         return when (this) {
             HardeningSetupStatus.AUTO_CONFIRMED -> "Confirmed"
             HardeningSetupStatus.USER_CONFIRMED -> "Parent confirmed"
+            HardeningSetupStatus.CONFIRMED_DISABLED -> "Confirmed"
+            HardeningSetupStatus.CONFIRMED_ABSENT -> "Confirmed"
+            HardeningSetupStatus.BEST_EFFORT_AUTO_CHECK -> "Confirmed"
+            HardeningSetupStatus.PARENT_CONFIRMED -> "Parent confirmed"
+            HardeningSetupStatus.COMPROMISE_SUSPECTED -> "Parent PIN may be compromised"
             HardeningSetupStatus.NEEDS_ATTENTION -> "Needs attention"
             HardeningSetupStatus.NOT_SUPPORTED -> "Not supported"
             HardeningSetupStatus.OPENED_SETTINGS -> "Needs attention"
@@ -454,8 +471,19 @@ class ParentMainActivity : Activity() {
             HardeningEvidenceType.AUTOMATIC_CHECK -> "automatic"
             HardeningEvidenceType.PARENT_CONFIRMATION -> "parent confirmed"
             HardeningEvidenceType.MANUAL_DEVICE_SETTING -> "manual instruction"
+            HardeningEvidenceType.MANUAL_SETTINGS_REVIEW -> "manual instruction"
+            HardeningEvidenceType.BEST_EFFORT_DEVICE_CHECK -> "automatic"
+            HardeningEvidenceType.STATE_CHANGE_OUTSIDE_AUTHORIZED_WINDOW -> "state change outside parent window"
             HardeningEvidenceType.BEHAVIOR_TEST -> "behavior test"
             HardeningEvidenceType.UNKNOWN -> "unknown"
+        }
+    }
+
+    private fun com.vordain.guard.features.setupchecklist.PinCompromiseSignal.toDisplayLabel(): String {
+        return if (suspected) {
+            "Parent PIN may be compromised / ${changedStep?.toDisplayLabel() ?: "unknown step"} / ${changedAtMillis ?: "unknown time"}"
+        } else {
+            "No signal"
         }
     }
 
@@ -468,7 +496,17 @@ class ParentMainActivity : Activity() {
             HardeningSetupStep.SCREEN_PINNING_WITH_PIN -> "Screen pinning with PIN"
             HardeningSetupStep.BATTERY_OPTIMIZATION -> "Battery optimization"
             HardeningSetupStep.PRIVATE_DNS_REVIEW -> "Private DNS"
-            HardeningSetupStep.UNKNOWN_SOURCES_REVIEW -> "Unknown sources"
+            HardeningSetupStep.UNKNOWN_SOURCES_REVIEWED -> "Unknown sources"
+            HardeningSetupStep.DEVELOPER_OPTIONS_DISABLED -> "Developer Options disabled"
+            HardeningSetupStep.USB_DEBUGGING_DISABLED -> "USB debugging disabled"
+            HardeningSetupStep.WIRELESS_DEBUGGING_DISABLED -> "Wireless debugging disabled"
+            HardeningSetupStep.NO_UNRESTRICTED_SECONDARY_USERS -> "No unrestricted secondary users"
+            HardeningSetupStep.NO_UNRESTRICTED_WORK_PROFILE -> "No unrestricted work profile"
+            HardeningSetupStep.SETTINGS_LOCK_PARENT_PIN_ONLY -> "Settings/App Lock locked"
+            HardeningSetupStep.PARENT_PIN_NOT_SHARED -> "Parent PIN not shared"
+            HardeningSetupStep.PARENT_MAINTENANCE_WINDOW -> "Parent maintenance window"
+            HardeningSetupStep.PIN_COMPROMISE_REVIEW -> "PIN compromise review"
+            HardeningSetupStep.VPN_LIFECYCLE_HEALTH -> "VPN lifecycle health"
             HardeningSetupStep.FINAL_PARENT_REVIEW -> "Final parent review"
         }
     }

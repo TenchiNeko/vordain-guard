@@ -14,6 +14,15 @@ class DebugHardeningSetupReportCodec {
             "childDeviceId=${snapshot.childDeviceId.value}",
             "generatedAtMillis=${snapshot.generatedAtMillis}",
         )
+        snapshot.activeMaintenanceWindow?.let { window ->
+            lines += "maintenanceWindow=${window.windowId}|${window.openedAtMillis}|${window.expiresAtMillis}|" +
+                "${window.reason.name}|${window.openedByParentDeviceId?.value.orEmpty()}"
+        }
+        snapshot.latestPinCompromiseSignal.let { signal ->
+            lines += "pinCompromiseSignal=${signal.suspected}|${signal.reason}|" +
+                "${signal.changedStep?.name.orEmpty()}|${signal.changedAtMillis ?: ""}|" +
+                signal.activeMaintenanceWindowId.orEmpty()
+        }
         HardeningSetupStep.entries.forEach { step ->
             val item = snapshot.itemFor(step)
             lines += "${step.name}=${item.status.name}|${item.evidenceType.name}|${item.note.orEmpty()}"
@@ -41,10 +50,18 @@ class DebugHardeningSetupReportCodec {
             ?: return DebugHardeningSetupReportCodecResult.Rejected("Missing childDeviceId")
         val generatedAtMillis = values["generatedAtMillis"]?.toLongOrNull()
             ?: return DebugHardeningSetupReportCodecResult.Rejected("Malformed generatedAtMillis")
+        val forbiddenField = values.keys.firstOrNull { key -> key in forbiddenFieldNames }
+        if (forbiddenField != null) {
+            return DebugHardeningSetupReportCodecResult.Rejected("Forbidden sensitive field: $forbiddenField")
+        }
 
         val items = mutableListOf<HardeningSetupItem>()
         for (step in HardeningSetupStep.entries) {
-            val encodedItem = values[step.name] ?: continue
+            val encodedItem = values[step.name] ?: if (step == HardeningSetupStep.UNKNOWN_SOURCES_REVIEWED) {
+                values[LEGACY_UNKNOWN_SOURCES_REVIEW]
+            } else {
+                null
+            } ?: continue
             val parts = encodedItem.split('|', limit = 3)
             if (parts.size < 2) {
                 return DebugHardeningSetupReportCodecResult.Rejected("Malformed item for ${step.name}")
@@ -62,7 +79,22 @@ class DebugHardeningSetupReportCodec {
             )
         }
 
-        val knownKeys = setOf("childDeviceId", "generatedAtMillis") + HardeningSetupStep.entries.map { step -> step.name }
+        val activeMaintenanceWindow = values["maintenanceWindow"]?.let { encoded ->
+            decodeMaintenanceWindow(encoded)
+                ?: return DebugHardeningSetupReportCodecResult.Rejected("Malformed maintenanceWindow")
+        }
+        val compromiseSignal = values["pinCompromiseSignal"]?.let { encoded ->
+            decodeCompromiseSignal(encoded)
+                ?: return DebugHardeningSetupReportCodecResult.Rejected("Malformed pinCompromiseSignal")
+        } ?: PinCompromiseSignal.NONE
+
+        val knownKeys = setOf(
+            "childDeviceId",
+            "generatedAtMillis",
+            "maintenanceWindow",
+            "pinCompromiseSignal",
+            LEGACY_UNKNOWN_SOURCES_REVIEW,
+        ) + HardeningSetupStep.entries.map { step -> step.name }
         val unknownStepKey = values.keys.firstOrNull { key ->
             key !in knownKeys && key.uppercase() == key && key.contains('_')
         }
@@ -85,6 +117,8 @@ class DebugHardeningSetupReportCodec {
             generatedAtMillis = generatedAtMillis,
             items = withDefaults,
             summaryStatus = HardeningSummaryStatus.UNKNOWN,
+            activeMaintenanceWindow = activeMaintenanceWindow,
+            latestPinCompromiseSignal = compromiseSignal,
         )
         return DebugHardeningSetupReportCodecResult.Decoded(
             snapshot.copy(summaryStatus = reducer.summarize(snapshot)),
@@ -95,7 +129,50 @@ class DebugHardeningSetupReportCodec {
         return enumValues<T>().firstOrNull { enumValue -> enumValue.name == value }
     }
 
+    private fun decodeMaintenanceWindow(encoded: String): ParentMaintenanceWindow? {
+        val parts = encoded.split('|', limit = 5)
+        if (parts.size < 4) {
+            return null
+        }
+        val reason = enumValueOrNull<MaintenanceWindowReason>(parts[3].trim()) ?: return null
+        return runCatching {
+            ParentMaintenanceWindow(
+                windowId = parts[0].trim(),
+                openedAtMillis = parts[1].trim().toLong(),
+                expiresAtMillis = parts[2].trim().toLong(),
+                reason = reason,
+                openedByParentDeviceId = parts.getOrNull(4)?.trim()?.takeIf(String::isNotBlank)?.let(::DeviceId),
+            )
+        }.getOrNull()
+    }
+
+    private fun decodeCompromiseSignal(encoded: String): PinCompromiseSignal? {
+        val parts = encoded.split('|', limit = 5)
+        if (parts.size < 2) {
+            return null
+        }
+        val step = parts.getOrNull(2)?.trim()?.takeIf(String::isNotBlank)?.let { encodedStep ->
+            enumValueOrNull<HardeningSetupStep>(encodedStep) ?: return null
+        }
+        val changedAtMillis = parts.getOrNull(3)?.trim()?.takeIf(String::isNotBlank)?.toLongOrNull()
+        return PinCompromiseSignal(
+            suspected = parts[0].trim().toBooleanStrictOrNull() ?: return null,
+            reason = parts[1].trim(),
+            changedStep = step,
+            changedAtMillis = changedAtMillis,
+            activeMaintenanceWindowId = parts.getOrNull(4)?.trim()?.takeIf(String::isNotBlank),
+        )
+    }
+
     companion object {
         const val HEADER = "VORDAIN_DEBUG_HARDENING_REPORT_V1"
+        private const val LEGACY_UNKNOWN_SOURCES_REVIEW = "UNKNOWN_SOURCES_REVIEW"
+        private val forbiddenFieldNames = setOf(
+            "pin" + "Value",
+            "pin" + "Digits",
+            "password",
+            "key" + "strokes",
+            "credential",
+        )
     }
 }

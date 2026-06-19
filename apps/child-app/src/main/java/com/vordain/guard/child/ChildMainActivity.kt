@@ -41,6 +41,8 @@ import com.vordain.guard.features.setupchecklist.HardeningSetupSnapshot
 import com.vordain.guard.features.setupchecklist.HardeningSetupStatus
 import com.vordain.guard.features.setupchecklist.HardeningSetupStep
 import com.vordain.guard.features.setupchecklist.HardeningSummaryStatus
+import com.vordain.guard.features.setupchecklist.MaintenanceWindowReason
+import com.vordain.guard.features.setupchecklist.ParentMaintenanceWindow
 import com.vordain.guard.vpn.lab.LabTrafficObservationStats
 import com.vordain.guard.vpn.service.LabCaptureDebugStatus
 import com.vordain.guard.vpn.service.VordainVpnServiceIntents
@@ -295,11 +297,98 @@ class ChildMainActivity : Activity() {
         })
         layout.addView(button("Mark Unknown sources reviewed") {
             updateHardeningStep(
-                step = HardeningSetupStep.UNKNOWN_SOURCES_REVIEW,
+                step = HardeningSetupStep.UNKNOWN_SOURCES_REVIEWED,
                 status = HardeningSetupStatus.USER_CONFIRMED,
                 evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
                 note = "Parent reviewed unknown app install sources.",
             )
+        })
+        layout.addView(sectionTitle("Bypass-risk checklist"))
+        layout.addView(valueLabel("Developer Options, ADB, wireless debugging, and user/profile checks are manual or best-effort checks on non-managed Android.", textSize = 14f))
+        layout.addView(valueLabel("Vordain does not record PINs.", textSize = 14f))
+        layout.addView(valueLabel("Compromise warnings are based on hardening changes outside parent-authorized setup windows.", textSize = 14f))
+        layout.addView(button("Open Developer Options") {
+            openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+            updateHardeningStep(
+                step = HardeningSetupStep.DEVELOPER_OPTIONS_DISABLED,
+                status = HardeningSetupStatus.OPENED_SETTINGS,
+                evidenceType = HardeningEvidenceType.MANUAL_SETTINGS_REVIEW,
+                note = "Parent opened Developer Options for manual review.",
+            )
+        })
+        layout.addView(button("Mark Developer Options disabled") {
+            updateHardeningStep(
+                step = HardeningSetupStep.DEVELOPER_OPTIONS_DISABLED,
+                status = HardeningSetupStatus.CONFIRMED_DISABLED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed Developer Options are disabled.",
+            )
+        })
+        layout.addView(button("Mark USB debugging disabled") {
+            updateHardeningStep(
+                step = HardeningSetupStep.USB_DEBUGGING_DISABLED,
+                status = HardeningSetupStatus.CONFIRMED_DISABLED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed USB debugging is disabled.",
+            )
+        })
+        layout.addView(button("Mark Wireless debugging disabled") {
+            updateHardeningStep(
+                step = HardeningSetupStep.WIRELESS_DEBUGGING_DISABLED,
+                status = HardeningSetupStatus.CONFIRMED_DISABLED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed Wireless debugging is disabled if present.",
+            )
+        })
+        layout.addView(button("Open user/profile settings") {
+            openSettings(ACTION_USER_SETTINGS)
+            updateHardeningStep(
+                step = HardeningSetupStep.NO_UNRESTRICTED_SECONDARY_USERS,
+                status = HardeningSetupStatus.OPENED_SETTINGS,
+                evidenceType = HardeningEvidenceType.MANUAL_SETTINGS_REVIEW,
+                note = "Parent opened user/profile settings for manual review.",
+            )
+        })
+        layout.addView(button("Mark no unrestricted secondary users") {
+            updateHardeningStep(
+                step = HardeningSetupStep.NO_UNRESTRICTED_SECONDARY_USERS,
+                status = HardeningSetupStatus.CONFIRMED_ABSENT,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed no unrestricted secondary users.",
+            )
+        })
+        layout.addView(button("Mark no unrestricted work profile") {
+            updateHardeningStep(
+                step = HardeningSetupStep.NO_UNRESTRICTED_WORK_PROFILE,
+                status = HardeningSetupStatus.CONFIRMED_ABSENT,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed no unrestricted work profile.",
+            )
+        })
+        layout.addView(button("Mark Settings/App Lock uses parent PIN only") {
+            updateHardeningStep(
+                step = HardeningSetupStep.SETTINGS_LOCK_PARENT_PIN_ONLY,
+                status = HardeningSetupStatus.PARENT_CONFIRMED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed Settings/App Lock is controlled by parent PIN only.",
+            )
+        })
+        layout.addView(button("Mark parent PIN not shared") {
+            updateHardeningStep(
+                step = HardeningSetupStep.PARENT_PIN_NOT_SHARED,
+                status = HardeningSetupStatus.PARENT_CONFIRMED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed the PIN has not been shared.",
+            )
+        })
+        layout.addView(button("Start parent maintenance window") {
+            startParentMaintenanceWindow()
+        })
+        layout.addView(button("End parent maintenance window") {
+            endParentMaintenanceWindow()
+        })
+        layout.addView(button("Simulate hardening change outside parent window") {
+            simulateHardeningChangeOutsideParentWindow()
         })
         layout.addView(button("Copy setup report") {
             copyHardeningSetupReport()
@@ -637,6 +726,48 @@ class ChildMainActivity : Activity() {
         refreshDiagnosticsViews()
     }
 
+    private fun startParentMaintenanceWindow() {
+        val now = System.currentTimeMillis()
+        hardeningSetupSnapshot = hardeningSetupReducer.openMaintenanceWindow(
+            snapshot = currentHardeningSetupSnapshot(),
+            window = ParentMaintenanceWindow(
+                windowId = "debug-maintenance-$now",
+                openedAtMillis = now,
+                expiresAtMillis = now + MAINTENANCE_WINDOW_MILLIS,
+                reason = MaintenanceWindowReason.APP_LOCK_REVIEW,
+            ),
+            currentTimeMillis = now,
+        )
+        latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(currentHardeningSetupSnapshot())
+        saveCurrentState()
+        refreshDiagnosticsViews()
+    }
+
+    private fun endParentMaintenanceWindow() {
+        hardeningSetupSnapshot = hardeningSetupReducer.closeMaintenanceWindow(
+            snapshot = currentHardeningSetupSnapshot(),
+            currentTimeMillis = System.currentTimeMillis(),
+        )
+        latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(currentHardeningSetupSnapshot())
+        saveCurrentState()
+        refreshDiagnosticsViews()
+    }
+
+    private fun simulateHardeningChangeOutsideParentWindow() {
+        val withoutWindow = currentHardeningSetupSnapshot().copy(activeMaintenanceWindow = null)
+        hardeningSetupSnapshot = hardeningSetupReducer.updateStep(
+            snapshot = withoutWindow,
+            step = HardeningSetupStep.SETTINGS_LOCK_PARENT_PIN_ONLY,
+            status = HardeningSetupStatus.NEEDS_ATTENTION,
+            evidenceType = HardeningEvidenceType.STATE_CHANGE_OUTSIDE_AUTHORIZED_WINDOW,
+            note = "Settings/App Lock hardening changed outside parent maintenance window.",
+            currentTimeMillis = System.currentTimeMillis(),
+        )
+        latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(currentHardeningSetupSnapshot())
+        saveCurrentState()
+        refreshDiagnosticsViews()
+    }
+
     private fun evaluatePolicyDomain() {
         policyResult = policyDemo.evaluate(policyDomainInput.text.toString())
         policyOutputText.text = policyResult?.asDisplayText().orEmpty()
@@ -917,6 +1048,8 @@ class ChildMainActivity : Activity() {
         val lines = mutableListOf(
             "Hardening summary: ${snapshot.summaryStatus.toDisplayLabel()}",
             snapshot.warningText,
+            "Maintenance window: ${snapshot.activeMaintenanceWindow?.windowId ?: "none"}",
+            "Compromise signal: ${snapshot.latestPinCompromiseSignal.toDisplayLabel()}",
             "Always-on VPN: Open VPN settings, tap Vordain Guard, enable Always-on VPN.",
             "Block without VPN: In the Vordain VPN settings, enable Block connections without VPN.",
             "Settings/App Lock: If this device has App Lock, lock Settings and VPN settings behind the parent PIN.",
@@ -1067,7 +1200,7 @@ class ChildMainActivity : Activity() {
         setupSettingsAppLockStatus = snapshot.itemFor(HardeningSetupStep.SETTINGS_APP_LOCK).status.toSetupCheckState()
         setupScreenPinningStatus = snapshot.itemFor(HardeningSetupStep.SCREEN_PINNING_WITH_PIN).status.toSetupCheckState()
         setupPrivateDnsStatus = snapshot.itemFor(HardeningSetupStep.PRIVATE_DNS_REVIEW).status.toSetupCheckState()
-        setupUnknownSourcesStatus = snapshot.itemFor(HardeningSetupStep.UNKNOWN_SOURCES_REVIEW).status.toSetupCheckState()
+        setupUnknownSourcesStatus = snapshot.itemFor(HardeningSetupStep.UNKNOWN_SOURCES_REVIEWED).status.toSetupCheckState()
     }
 
     private fun String.toSetupCheckState(): SetupCheckState {
@@ -1078,10 +1211,16 @@ class ChildMainActivity : Activity() {
         return when (this) {
             HardeningSetupStatus.AUTO_CONFIRMED -> SetupCheckState.CONFIGURED
             HardeningSetupStatus.USER_CONFIRMED -> SetupCheckState.USER_CONFIRMED
+            HardeningSetupStatus.CONFIRMED_DISABLED,
+            HardeningSetupStatus.CONFIRMED_ABSENT,
+            HardeningSetupStatus.BEST_EFFORT_AUTO_CHECK,
+            HardeningSetupStatus.PARENT_CONFIRMED,
+            -> SetupCheckState.USER_CONFIRMED
             HardeningSetupStatus.NEEDS_ATTENTION -> SetupCheckState.NOT_CONFIGURED
             HardeningSetupStatus.NOT_STARTED,
             HardeningSetupStatus.OPENED_SETTINGS,
             HardeningSetupStatus.NOT_SUPPORTED,
+            HardeningSetupStatus.COMPROMISE_SUSPECTED,
             HardeningSetupStatus.UNKNOWN,
             -> SetupCheckState.UNKNOWN
         }
@@ -1101,6 +1240,11 @@ class ChildMainActivity : Activity() {
         return when (this) {
             HardeningSetupStatus.AUTO_CONFIRMED -> "Confirmed"
             HardeningSetupStatus.USER_CONFIRMED -> "Parent confirmed"
+            HardeningSetupStatus.CONFIRMED_DISABLED -> "Confirmed"
+            HardeningSetupStatus.CONFIRMED_ABSENT -> "Confirmed"
+            HardeningSetupStatus.BEST_EFFORT_AUTO_CHECK -> "Confirmed"
+            HardeningSetupStatus.PARENT_CONFIRMED -> "Parent confirmed"
+            HardeningSetupStatus.COMPROMISE_SUSPECTED -> "Parent PIN may be compromised"
             HardeningSetupStatus.NEEDS_ATTENTION -> "Needs attention"
             HardeningSetupStatus.NOT_SUPPORTED -> "Not supported"
             HardeningSetupStatus.OPENED_SETTINGS -> "Needs attention"
@@ -1115,8 +1259,19 @@ class ChildMainActivity : Activity() {
             HardeningEvidenceType.AUTOMATIC_CHECK -> "automatic"
             HardeningEvidenceType.PARENT_CONFIRMATION -> "parent confirmed"
             HardeningEvidenceType.MANUAL_DEVICE_SETTING -> "manual instruction"
+            HardeningEvidenceType.MANUAL_SETTINGS_REVIEW -> "manual instruction"
+            HardeningEvidenceType.BEST_EFFORT_DEVICE_CHECK -> "automatic"
+            HardeningEvidenceType.STATE_CHANGE_OUTSIDE_AUTHORIZED_WINDOW -> "state change outside parent window"
             HardeningEvidenceType.BEHAVIOR_TEST -> "behavior test"
             HardeningEvidenceType.UNKNOWN -> "unknown"
+        }
+    }
+
+    private fun com.vordain.guard.features.setupchecklist.PinCompromiseSignal.toDisplayLabel(): String {
+        return if (suspected) {
+            "Parent PIN may be compromised: $reason / ${changedStep?.toDisplayLabel() ?: "unknown step"}"
+        } else {
+            "No compromise signal"
         }
     }
 
@@ -1129,7 +1284,17 @@ class ChildMainActivity : Activity() {
             HardeningSetupStep.SCREEN_PINNING_WITH_PIN -> "Screen pinning with PIN"
             HardeningSetupStep.BATTERY_OPTIMIZATION -> "Battery optimization"
             HardeningSetupStep.PRIVATE_DNS_REVIEW -> "Private DNS"
-            HardeningSetupStep.UNKNOWN_SOURCES_REVIEW -> "Unknown sources"
+            HardeningSetupStep.UNKNOWN_SOURCES_REVIEWED -> "Unknown sources"
+            HardeningSetupStep.DEVELOPER_OPTIONS_DISABLED -> "Developer Options disabled"
+            HardeningSetupStep.USB_DEBUGGING_DISABLED -> "USB debugging disabled"
+            HardeningSetupStep.WIRELESS_DEBUGGING_DISABLED -> "Wireless debugging disabled"
+            HardeningSetupStep.NO_UNRESTRICTED_SECONDARY_USERS -> "No unrestricted secondary users"
+            HardeningSetupStep.NO_UNRESTRICTED_WORK_PROFILE -> "No unrestricted work profile"
+            HardeningSetupStep.SETTINGS_LOCK_PARENT_PIN_ONLY -> "Settings/App Lock parent PIN only"
+            HardeningSetupStep.PARENT_PIN_NOT_SHARED -> "Parent PIN not shared"
+            HardeningSetupStep.PARENT_MAINTENANCE_WINDOW -> "Parent maintenance window"
+            HardeningSetupStep.PIN_COMPROMISE_REVIEW -> "PIN compromise review"
+            HardeningSetupStep.VPN_LIFECYCLE_HEALTH -> "VPN lifecycle health"
             HardeningSetupStep.FINAL_PARENT_REVIEW -> "Final parent review"
         }
     }
@@ -1148,6 +1313,8 @@ class ChildMainActivity : Activity() {
 
     private companion object {
         const val REQUEST_VPN_PERMISSION = 1001
+        const val MAINTENANCE_WINDOW_MILLIS = 15L * 60L * 1_000L
+        const val ACTION_USER_SETTINGS = "android.settings.USER_SETTINGS"
         val defaultPairingCapabilities = setOf(
             PairingCapability.POLICY_UPDATES,
             PairingCapability.HEARTBEAT_STATUS,
