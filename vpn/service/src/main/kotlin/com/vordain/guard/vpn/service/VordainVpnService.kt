@@ -7,6 +7,7 @@ import com.vordain.guard.vpn.session.VpnTunnelSpec
 
 class VordainVpnService : VpnService() {
     private var tunnelHandle: AndroidVpnTunnelHandle? = null
+    private var captureLoop: AndroidTunPacketCaptureLoop? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -24,7 +25,15 @@ class VordainVpnService : VpnService() {
                     VpnForegroundNotification.NOTIFICATION_ID,
                     VpnForegroundNotification.build(this),
                 )
-                establishTunnel()
+                establishTunnel(VpnTunnelSpec.establishOnlySmokeTest(), capturePackets = false)
+                START_STICKY
+            }
+            VpnServiceCommandResult.HandledLabStart -> {
+                startForeground(
+                    VpnForegroundNotification.NOTIFICATION_ID,
+                    VpnForegroundNotification.build(this),
+                )
+                establishTunnel(VpnTunnelSpec.labFullTunnelCapture(), capturePackets = true)
                 START_STICKY
             }
             VpnServiceCommandResult.HandledStop -> {
@@ -54,19 +63,29 @@ class VordainVpnService : VpnService() {
 
     /*
      * This class is only an Android platform adapter. It owns Android VPN
-     * lifecycle callbacks and future tunnel setup/teardown only.
+     * lifecycle callbacks and tunnel setup/teardown only.
      *
      * It must not contain blocklists, allowlists, lockdown rules, classifier
-     * decisions, DNS parsing, network calls, or packet I/O loops. Traffic
-     * evaluation belongs in pure Kotlin vpn-engine; policy decisions belong in
-     * core/policy.
+     * decisions, DNS parsing, network calls, or packet forwarding. The lab
+     * capture path reads local TUN packets and drops them for developer smoke
+     * testing only. Traffic evaluation belongs in pure Kotlin vpn-engine;
+     * policy decisions belong in core/policy.
      */
 
-    private fun establishTunnel() {
-        when (val result = tunnelOpener.establish(this, VpnTunnelSpec.establishOnlySmokeTest())) {
+    private fun establishTunnel(
+        spec: VpnTunnelSpec,
+        capturePackets: Boolean,
+    ) {
+        when (val result = tunnelOpener.establish(this, spec)) {
             is AndroidVpnTunnelOpenResult.Established -> {
-                tunnelHandle?.close()
+                closeTunnel()
                 tunnelHandle = result.handle
+                if (capturePackets) {
+                    captureLoop = AndroidTunPacketCaptureLoop(
+                        descriptor = result.handle.descriptor,
+                        sink = LabPacketCaptureDebugStatus.sink(),
+                    ).also(AndroidTunPacketCaptureLoop::start)
+                }
                 sessionSink.onVpnStarted()
                 lifecycleSink.onVpnStarted()
             }
@@ -80,6 +99,8 @@ class VordainVpnService : VpnService() {
     }
 
     private fun closeTunnel() {
+        captureLoop?.stop()
+        captureLoop = null
         tunnelHandle?.close()
         tunnelHandle = null
     }

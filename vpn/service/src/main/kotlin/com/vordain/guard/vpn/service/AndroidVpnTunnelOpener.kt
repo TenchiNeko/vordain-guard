@@ -43,7 +43,7 @@ sealed interface AndroidVpnTunnelOpenResult {
 }
 
 class AndroidVpnTunnelHandle(
-    private val descriptor: ParcelFileDescriptor,
+    val descriptor: ParcelFileDescriptor,
 ) {
     fun close() {
         descriptor.close()

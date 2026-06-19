@@ -13,4 +13,14 @@ object VordainVpnServiceIntents {
         return Intent(context, VordainVpnService::class.java)
             .setAction(VordainVpnServiceActions.ACTION_STOP_PROTECTION)
     }
+
+    fun startLabCapture(context: Context): Intent {
+        return Intent(context, VordainVpnService::class.java)
+            .setAction(VordainVpnServiceActions.ACTION_START_LAB_CAPTURE)
+    }
+
+    fun stopLabCapture(context: Context): Intent {
+        return Intent(context, VordainVpnService::class.java)
+            .setAction(VordainVpnServiceActions.ACTION_STOP_LAB_CAPTURE)
+    }
 }

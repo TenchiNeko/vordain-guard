@@ -68,6 +68,7 @@ class VpnTunnelSpecTest {
         val spec = VpnTunnelSpec.establishOnlySmokeTest()
 
         assertFalse(spec.allowNormalTrafficRouting)
+        assertFalse(spec.labMode)
         assertTrue(spec.addresses.isNotEmpty())
         assertEquals(listOf(VpnTunnelRoute(address = "192.0.2.0", prefixLength = 24)), spec.routes)
     }
@@ -77,5 +78,23 @@ class VpnTunnelSpecTest {
         val spec = VpnTunnelSpec.establishOnlySmokeTest()
 
         assertFalse(spec.toString().contains("dns", ignoreCase = true))
+    }
+
+    @Test
+    fun labFullTunnelSpecAllowsDefaultRoutesOnlyInLabMode() {
+        val spec = VpnTunnelSpec.labFullTunnelCapture()
+
+        assertTrue(spec.labMode)
+        assertTrue(spec.allowNormalTrafficRouting)
+        assertTrue(spec.routes.contains(VpnTunnelRoute("0.0.0.0", 0, allowDefaultRoute = true)))
+        assertTrue(spec.routes.contains(VpnTunnelRoute("::", 0, allowDefaultRoute = true)))
+    }
+
+    @Test
+    fun safeSmokeTestSpecDoesNotUseDefaultRoutes() {
+        val spec = VpnTunnelSpec.establishOnlySmokeTest()
+
+        assertFalse(spec.routes.any { it.address == "0.0.0.0" && it.prefixLength == 0 })
+        assertFalse(spec.routes.any { it.address == "::" && it.prefixLength == 0 })
     }
 }

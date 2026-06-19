@@ -32,6 +32,8 @@ import com.vordain.guard.core.policysync.PersistedSignedPolicySnapshot
 import com.vordain.guard.core.policysync.PolicyVersion
 import com.vordain.guard.core.policysync.SignedPolicySnapshotRestorer
 import com.vordain.guard.data.review.ReviewRequestReason
+import com.vordain.guard.vpn.service.LabPacketCaptureDebugStatus
+import com.vordain.guard.vpn.service.TunPacketCaptureStats
 import com.vordain.guard.vpn.service.VordainVpnServiceIntents
 import com.vordain.guard.vpn.service.VpnPermissionIntentFactory
 import com.vordain.guard.vpn.service.VpnPrepareResult
@@ -53,6 +55,7 @@ class ChildMainActivity : Activity() {
     private lateinit var lastCommandText: TextView
     private lateinit var shellStatusText: TextView
     private lateinit var setupChecklistText: TextView
+    private lateinit var labCaptureText: TextView
     private lateinit var policyDomainInput: EditText
     private lateinit var policyOutputText: TextView
     private lateinit var policyHandoffTargetInput: EditText
@@ -158,6 +161,22 @@ class ChildMainActivity : Activity() {
         layout.addView(button(ChildVpnSmokeLabels.STOP_BUTTON) {
             stopVpnShell()
         })
+
+        layout.addView(sectionTitle("Lab full-tunnel capture"))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_WARNING, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_LOCAL_ONLY, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION, textSize = 14f))
+        layout.addView(button("Start lab capture") {
+            startLabCaptureWhenAllowed()
+        })
+        layout.addView(button("Stop lab capture") {
+            stopLabCapture()
+        })
+        layout.addView(button("Refresh lab stats") {
+            refreshDiagnosticsViews()
+        })
+        labCaptureText = valueLabel(createLabCaptureDisplay(LabPacketCaptureDebugStatus.snapshot()), textSize = 14f)
+        layout.addView(labCaptureText)
 
         layout.addView(sectionTitle("Setup checklist"))
         setupChecklistText = valueLabel("", textSize = 15f)
@@ -390,6 +409,37 @@ class ChildMainActivity : Activity() {
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
     }
 
+    private fun startLabCaptureWhenAllowed() {
+        when (val result = vpnPermissionIntentFactory.createPrepareResult(this)) {
+            VpnPrepareResult.AlreadyGranted -> {
+                setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_GRANTED)
+                setLastCommand(ChildVpnSmokeLabels.COMMAND_LAB_START_SENT)
+                setShellStatus(ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_STARTING)
+                val intent = VordainVpnServiceIntents.startLabCapture(this)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+                setStatus(ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_ACTIVE)
+            }
+            is VpnPrepareResult.ConsentRequired -> {
+                setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_REQUIRED)
+                setLastCommand(ChildVpnSmokeLabels.COMMAND_PERMISSION_REQUESTED)
+                setStatus(ChildVpnSmokeLabels.STATUS_PERMISSION_REQUIRED)
+                startActivityForResult(result.intent, REQUEST_VPN_PERMISSION)
+            }
+        }
+    }
+
+    private fun stopLabCapture() {
+        setLastCommand(ChildVpnSmokeLabels.COMMAND_LAB_STOP_SENT)
+        setShellStatus(ChildVpnSmokeLabels.STATUS_STOP_COMMAND_SENT)
+        startService(VordainVpnServiceIntents.stopLabCapture(this))
+        setStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
+        setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
+    }
+
     private fun evaluatePolicyDomain() {
         policyResult = policyDemo.evaluate(policyDomainInput.text.toString())
         policyOutputText.text = policyResult?.asDisplayText().orEmpty()
@@ -581,6 +631,9 @@ class ChildMainActivity : Activity() {
                 state = createDashboardState(),
             )
         }
+        if (::labCaptureText.isInitialized) {
+            labCaptureText.text = createLabCaptureDisplay(LabPacketCaptureDebugStatus.snapshot())
+        }
     }
 
     private fun createDiagnostics(): ChildVpnSmokeDiagnostics {
@@ -609,7 +662,22 @@ class ChildMainActivity : Activity() {
             compatibilityResult = compatibilityResult,
             reviewResult = reviewResult,
             localEvents = localDebugEvents.toList(),
+            labCaptureStats = LabPacketCaptureDebugStatus.snapshot(),
         )
+    }
+
+    private fun createLabCaptureDisplay(stats: TunPacketCaptureStats): String {
+        return listOf(
+            "Lab mode status: $shellStatus",
+            "Packet count: ${stats.packetCount}",
+            "Byte count: ${stats.byteCount}",
+            "IPv4/IPv6: ${stats.ipv4Count}/${stats.ipv6Count}",
+            "TCP/UDP/ICMP: ${stats.tcpCount}/${stats.udpCount}/${stats.icmpCount}",
+            "Malformed: ${stats.malformedCount}",
+            "Last packet: ${stats.lastPacketSummary ?: "none"}",
+            ChildVpnSmokeLabels.LAB_LOCAL_ONLY,
+            ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION,
+        ).joinToString(separator = "\n")
     }
 
     private fun createSetupChecklist(): VpnSetupChecklist {

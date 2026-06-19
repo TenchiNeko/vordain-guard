@@ -30,6 +30,28 @@ class VpnServiceCommandBridgeTest {
     }
 
     @Test
+    fun labCaptureActionMapsToDistinctLabStartCommand() {
+        val sink = RecordingVpnSessionSink()
+
+        val result = VpnServiceCommandBridge(sink)
+            .handleAction(VordainVpnServiceActions.ACTION_START_LAB_CAPTURE)
+
+        assertEquals(VpnServiceCommandResult.HandledLabStart, result)
+        assertEquals(listOf("start-requested"), sink.calls)
+    }
+
+    @Test
+    fun stopLabCaptureActionMapsToStopCommand() {
+        val sink = RecordingVpnSessionSink()
+
+        val result = VpnServiceCommandBridge(sink)
+            .handleAction(VordainVpnServiceActions.ACTION_STOP_LAB_CAPTURE)
+
+        assertEquals(VpnServiceCommandResult.HandledStop, result)
+        assertEquals(listOf("stop-requested"), sink.calls)
+    }
+
+    @Test
     fun unknownActionIsSafeNoOp() {
         val sink = RecordingVpnSessionSink()
 
@@ -91,6 +113,8 @@ class VpnServiceCommandBridgeTest {
 
         assertTrue(source.contains("ACTION_START_PROTECTION"))
         assertTrue(source.contains("ACTION_STOP_PROTECTION"))
+        assertTrue(source.contains("ACTION_START_LAB_CAPTURE"))
+        assertTrue(source.contains("ACTION_STOP_LAB_CAPTURE"))
         assertTrue(source.contains("VordainVpnService::class.java"))
     }
 
@@ -100,6 +124,7 @@ class VpnServiceCommandBridgeTest {
 
         assertTrue(source.contains("override fun onStartCommand"))
         assertTrue(source.contains("HandledStart"))
+        assertTrue(source.contains("HandledLabStart"))
         assertTrue(source.contains("HandledStop"))
         assertTrue(source.contains("startForeground("))
         assertTrue(source.contains("stopForeground("))
@@ -138,6 +163,17 @@ class VpnServiceCommandBridgeTest {
         assertDoesNotContain(source, "DatagramSocket")
         assertDoesNotContain(source, "Socket(")
         assertDoesNotContain(source, "addDnsServer")
+    }
+
+    @Test
+    fun childDashboardWarnsThatLabCaptureDropsTrafficLocally() {
+        val source = repositoryRoot()
+            .resolve("apps/child-app/src/main/java/com/vordain/guard/child/ChildVpnSmokeLabels.kt")
+            .readText()
+
+        assertTrue(source.contains("Internet may stop"))
+        assertTrue(source.contains("No forwarding yet"))
+        assertTrue(source.contains("Not full protection"))
     }
 
     private class RecordingVpnSessionSink : VpnSessionSink {

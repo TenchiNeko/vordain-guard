@@ -9,7 +9,15 @@ class VpnServiceCommandBridge(
                 sessionSink.onVpnStartRequested()
                 VpnServiceCommandResult.HandledStart
             }
+            VordainVpnServiceActions.ACTION_START_LAB_CAPTURE -> {
+                sessionSink.onVpnStartRequested()
+                VpnServiceCommandResult.HandledLabStart
+            }
             VordainVpnServiceActions.ACTION_STOP_PROTECTION -> {
+                sessionSink.onVpnStopRequested()
+                VpnServiceCommandResult.HandledStop
+            }
+            VordainVpnServiceActions.ACTION_STOP_LAB_CAPTURE -> {
                 sessionSink.onVpnStopRequested()
                 VpnServiceCommandResult.HandledStop
             }
@@ -20,6 +28,7 @@ class VpnServiceCommandBridge(
 
 enum class VpnServiceCommandResult {
     HandledStart,
+    HandledLabStart,
     HandledStop,
     Ignored,
 }

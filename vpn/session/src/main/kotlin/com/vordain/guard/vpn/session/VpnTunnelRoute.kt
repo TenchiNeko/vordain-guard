@@ -3,11 +3,12 @@ package com.vordain.guard.vpn.session
 data class VpnTunnelRoute(
     val address: String,
     val prefixLength: Int,
+    val allowDefaultRoute: Boolean = false,
 ) {
     init {
         require(address.isNotBlank()) { "VPN tunnel route address must not be blank" }
         require(prefixLength in 0..128) { "VPN tunnel route prefix length must be between 0 and 128" }
-        require(!isForbiddenDefaultRoute(address, prefixLength)) {
+        require(allowDefaultRoute || !isForbiddenDefaultRoute(address, prefixLength)) {
             "Default VPN routes are not allowed in establish-only smoke mode"
         }
     }

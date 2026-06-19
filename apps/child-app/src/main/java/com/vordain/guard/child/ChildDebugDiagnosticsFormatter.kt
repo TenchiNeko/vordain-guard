@@ -27,6 +27,15 @@ class ChildDebugDiagnosticsFormatter {
         state.reviewResult?.let { result ->
             lines += "Review demo domain: ${result.sanitizedDomain ?: "none"}"
         }
+        lines += "Lab capture status:"
+        lines += "Packets: ${state.labCaptureStats.packetCount}"
+        lines += "Bytes: ${state.labCaptureStats.byteCount}"
+        lines += "IPv4/IPv6: ${state.labCaptureStats.ipv4Count}/${state.labCaptureStats.ipv6Count}"
+        lines += "TCP/UDP/ICMP: ${state.labCaptureStats.tcpCount}/${state.labCaptureStats.udpCount}/${state.labCaptureStats.icmpCount}"
+        lines += "Malformed: ${state.labCaptureStats.malformedCount}"
+        lines += "Last packet: ${state.labCaptureStats.lastPacketSummary ?: "none"}"
+        lines += ChildVpnSmokeLabels.LAB_LOCAL_ONLY
+        lines += ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION
         lines += "Local debug events: ${state.localEvents.size}"
         lines += "Filtering enabled: no"
         return lines.joinToString(separator = "\n")
