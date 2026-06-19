@@ -24,6 +24,9 @@ class ChildDebugPolicyHandoff(
                 policyVersion = null,
                 allowDomainCount = 0,
                 blockDomainCount = 0,
+                presetName = null,
+                policyDisplayLabel = null,
+                blockEncryptedDnsResolvers = true,
                 policy = null,
                 message = decoded.reason,
             )
@@ -39,6 +42,9 @@ class ChildDebugPolicyHandoff(
                     policyVersion = applyResult.policyVersion,
                     allowDomainCount = applyResult.policy?.allowedDomains?.size ?: 0,
                     blockDomainCount = applyResult.policy?.blockedDomains?.size ?: 0,
+                    presetName = decoded.update.presetName,
+                    policyDisplayLabel = decoded.update.policyDisplayLabel,
+                    blockEncryptedDnsResolvers = decoded.update.blockEncryptedDnsResolvers,
                     policy = applyResult.policy,
                     message = if (applyResult.reason == PolicyUpdateVerificationResult.Valid) {
                         "Debug policy update accepted in memory"
@@ -57,6 +63,9 @@ data class ChildDebugPolicyHandoffResult(
     val policyVersion: PolicyVersion?,
     val allowDomainCount: Int,
     val blockDomainCount: Int,
+    val presetName: String?,
+    val policyDisplayLabel: String?,
+    val blockEncryptedDnsResolvers: Boolean,
     val policy: com.vordain.guard.core.policy.Policy?,
     val message: String,
 ) {
@@ -65,8 +74,10 @@ data class ChildDebugPolicyHandoffResult(
             "Accepted: ${if (accepted) "yes" else "no"}",
             "Reason: $reason",
             "Current debug policy version: ${policyVersion?.value ?: "unchanged"}",
+            "Preset: ${policyDisplayLabel ?: presetName ?: "unspecified"}",
             "Allowed domains: $allowDomainCount",
             "Blocked domains: $blockDomainCount",
+            "Encrypted DNS resolver blocking: ${if (blockEncryptedDnsResolvers) "enabled" else "not requested"}",
             message,
             "This build does not filter traffic yet. Policy tester only.",
         ).joinToString(separator = "\n")

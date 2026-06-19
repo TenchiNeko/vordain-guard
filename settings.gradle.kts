@@ -21,6 +21,7 @@ include(":apps:child-app")
 
 include(":core:model")
 include(":core:policy")
+include(":core:policy-presets")
 include(":core:policy-sync")
 include(":core:pairing")
 include(":core:crypto")

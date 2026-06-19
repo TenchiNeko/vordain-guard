@@ -25,6 +25,9 @@ class DebugPolicyUpdateCodecTest {
         assertEquals(LockdownMode.STANDARD, decoded.update.policy.mode)
         assertTrue(decoded.update.policy.blockKnownProxyDomains)
         assertFalse(decoded.update.policy.blockUnknownDomains)
+        assertEquals("BASIC_DNS_GUARD", decoded.update.presetName)
+        assertEquals("Basic DNS Guard", decoded.update.policyDisplayLabel)
+        assertTrue(decoded.update.blockEncryptedDnsResolvers)
     }
 
     @Test
@@ -103,6 +106,41 @@ class DebugPolicyUpdateCodecTest {
     }
 
     @Test
+    fun oldPayloadWithoutPresetStillDecodes() {
+        val oldPayload = validPayload()
+            .lineSequence()
+            .filterNot { line ->
+                line.startsWith("presetName=") ||
+                    line.startsWith("policyDisplayLabel=") ||
+                    line.startsWith("blockEncryptedDnsResolvers=")
+            }
+            .joinToString("\n")
+
+        val decoded = assertIs<DebugPolicyUpdateCodecResult.Decoded>(codec.decode(oldPayload))
+
+        assertEquals(null, decoded.update.presetName)
+        assertTrue(decoded.update.blockEncryptedDnsResolvers)
+    }
+
+    @Test
+    fun unknownPresetDecodesAsCustom() {
+        val decoded = assertIs<DebugPolicyUpdateCodecResult.Decoded>(
+            codec.decode(validPayload().replace("presetName=BASIC_DNS_GUARD", "presetName=UNKNOWN_PRESET")),
+        )
+
+        assertEquals("CUSTOM", decoded.update.presetName)
+    }
+
+    @Test
+    fun blockEncryptedDnsResolversFlagRoundTrips() {
+        val decoded = assertIs<DebugPolicyUpdateCodecResult.Decoded>(
+            codec.decode(validPayload().replace("blockEncryptedDnsResolvers=true", "blockEncryptedDnsResolvers=false")),
+        )
+
+        assertFalse(decoded.update.blockEncryptedDnsResolvers)
+    }
+
+    @Test
     fun wrongTargetDeviceRejectsThroughApplier() {
         val decoded = assertIs<DebugPolicyUpdateCodecResult.Decoded>(codec.decode(validPayload()))
         val result = applier.apply(
@@ -149,6 +187,9 @@ class DebugPolicyUpdateCodecTest {
             issuedAtMillis = 1_000L,
             expiresAtMillis = 9_999L,
             signature = PolicyUpdateSignature("debug-signature"),
+            presetName = "BASIC_DNS_GUARD",
+            blockEncryptedDnsResolvers = true,
+            policyDisplayLabel = "Basic DNS Guard",
             policy = Policy(
                 id = PolicyId("debug-debug-2"),
                 mode = LockdownMode.STANDARD,

@@ -16,6 +16,12 @@ class ChildDebugStateStore(context: Context) {
             latestPolicyPayload = preferences.getString(KEY_LATEST_POLICY_PAYLOAD, null),
             latestPolicyAppliedAtMillis = preferences.getLong(KEY_LATEST_POLICY_APPLIED_AT_MILLIS, 0L),
             latestPolicyVersion = preferences.getString(KEY_LATEST_POLICY_VERSION, null),
+            latestPolicyPresetName = preferences.getString(KEY_LATEST_POLICY_PRESET_NAME, null),
+            latestPolicyDisplayLabel = preferences.getString(KEY_LATEST_POLICY_DISPLAY_LABEL, null),
+            latestPolicyBlockEncryptedDnsResolvers = preferences.getBoolean(
+                KEY_LATEST_POLICY_BLOCK_ENCRYPTED_DNS_RESOLVERS,
+                true,
+            ),
             latestAllowDomainsCsv = preferences.getString(KEY_LATEST_ALLOW_DOMAINS_CSV, null),
             latestBlockDomainsCsv = preferences.getString(KEY_LATEST_BLOCK_DOMAINS_CSV, null),
             vpnPermissionStatusLabel = preferences.getString(KEY_VPN_PERMISSION_STATUS_LABEL, null)
@@ -57,6 +63,12 @@ class ChildDebugStateStore(context: Context) {
             .putString(KEY_LATEST_POLICY_PAYLOAD, snapshot.latestPolicyPayload)
             .putLong(KEY_LATEST_POLICY_APPLIED_AT_MILLIS, snapshot.latestPolicyAppliedAtMillis)
             .putString(KEY_LATEST_POLICY_VERSION, snapshot.latestPolicyVersion)
+            .putString(KEY_LATEST_POLICY_PRESET_NAME, snapshot.latestPolicyPresetName)
+            .putString(KEY_LATEST_POLICY_DISPLAY_LABEL, snapshot.latestPolicyDisplayLabel)
+            .putBoolean(
+                KEY_LATEST_POLICY_BLOCK_ENCRYPTED_DNS_RESOLVERS,
+                snapshot.latestPolicyBlockEncryptedDnsResolvers,
+            )
             .putString(KEY_LATEST_ALLOW_DOMAINS_CSV, snapshot.latestAllowDomainsCsv)
             .putString(KEY_LATEST_BLOCK_DOMAINS_CSV, snapshot.latestBlockDomainsCsv)
             .putString(KEY_VPN_PERMISSION_STATUS_LABEL, snapshot.vpnPermissionStatusLabel)
@@ -89,6 +101,9 @@ class ChildDebugStateStore(context: Context) {
         const val KEY_LATEST_POLICY_PAYLOAD = "latest_policy_payload"
         const val KEY_LATEST_POLICY_APPLIED_AT_MILLIS = "latest_policy_applied_at_millis"
         const val KEY_LATEST_POLICY_VERSION = "latest_policy_version"
+        const val KEY_LATEST_POLICY_PRESET_NAME = "latest_policy_preset_name"
+        const val KEY_LATEST_POLICY_DISPLAY_LABEL = "latest_policy_display_label"
+        const val KEY_LATEST_POLICY_BLOCK_ENCRYPTED_DNS_RESOLVERS = "latest_policy_block_encrypted_dns_resolvers"
         const val KEY_LATEST_ALLOW_DOMAINS_CSV = "latest_allow_domains_csv"
         const val KEY_LATEST_BLOCK_DOMAINS_CSV = "latest_block_domains_csv"
         const val KEY_VPN_PERMISSION_STATUS_LABEL = "vpn_permission_status_label"
@@ -115,6 +130,9 @@ class ChildDebugStateStore(context: Context) {
             KEY_LATEST_POLICY_PAYLOAD,
             KEY_LATEST_POLICY_APPLIED_AT_MILLIS,
             KEY_LATEST_POLICY_VERSION,
+            KEY_LATEST_POLICY_PRESET_NAME,
+            KEY_LATEST_POLICY_DISPLAY_LABEL,
+            KEY_LATEST_POLICY_BLOCK_ENCRYPTED_DNS_RESOLVERS,
             KEY_LATEST_ALLOW_DOMAINS_CSV,
             KEY_LATEST_BLOCK_DOMAINS_CSV,
             KEY_VPN_PERMISSION_STATUS_LABEL,

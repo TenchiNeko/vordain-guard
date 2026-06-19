@@ -15,6 +15,9 @@ class DebugPolicyUpdateCodec {
             "issuedAtMillis=${update.issuedAtMillis}",
             "expiresAtMillis=${update.expiresAtMillis}",
             "signature=${update.signature.value}",
+            "presetName=${update.presetName.orEmpty()}",
+            "policyDisplayLabel=${update.policyDisplayLabel.orEmpty()}",
+            "blockEncryptedDnsResolvers=${update.blockEncryptedDnsResolvers}",
             "lockdownMode=${update.policy.mode.name}",
             "blockUnknownDomains=${update.policy.blockUnknownDomains}",
             "blockKnownProxyDomains=${update.policy.blockKnownProxyDomains}",
@@ -48,6 +51,10 @@ class DebugPolicyUpdateCodec {
 
             val signature = fields.required("signature")
             require(signature.isNotBlank()) { "signature must not be blank" }
+            val presetName = fields["presetName"]
+                ?.takeIf(String::isNotBlank)
+                ?.let(::normalizePresetName)
+            val policyDisplayLabel = fields["policyDisplayLabel"]?.takeIf(String::isNotBlank)
 
             val lockdownMode = fields["lockdownMode"]
                 ?.takeIf(String::isNotBlank)
@@ -61,6 +68,9 @@ class DebugPolicyUpdateCodec {
                 issuedAtMillis = issuedAtMillis,
                 expiresAtMillis = expiresAtMillis,
                 signature = PolicyUpdateSignature(signature),
+                presetName = presetName,
+                blockEncryptedDnsResolvers = fields["blockEncryptedDnsResolvers"].toBooleanOrDefault(defaultValue = true),
+                policyDisplayLabel = policyDisplayLabel,
                 policy = Policy(
                     id = PolicyId("debug-$policyVersion"),
                     mode = lockdownMode,
@@ -104,6 +114,19 @@ class DebugPolicyUpdateCodec {
             "false" -> false
             null, "" -> defaultValue
             else -> throw IllegalArgumentException("Boolean field must be true or false")
+        }
+    }
+
+    private fun normalizePresetName(rawValue: String): String {
+        val value = rawValue.trim()
+        return when (value) {
+            "BASIC_DNS_GUARD",
+            "STRICT_BROWSER",
+            "SCHOOL_FRIENDLY",
+            "HIGH_RISK_LOCKDOWN",
+            "CUSTOM",
+            -> value
+            else -> "CUSTOM"
         }
     }
 

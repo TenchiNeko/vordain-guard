@@ -78,6 +78,12 @@ class ChildSecurityStatusEvaluatorTest {
                 dnsBlockedResponseCount = 2,
                 dnsAllowedForwardedCount = 3,
                 dnsAllowedForwardFailureCount = 1,
+                activePolicySource = "Verified debug policy",
+                activePolicyPreset = "Basic DNS Guard",
+                encryptedDnsBlockingEnabled = true,
+                proxyBlockingEnabled = true,
+                policyAllowDomainCount = 2,
+                policyBlockDomainCount = 3,
             ),
         )
 
@@ -92,6 +98,12 @@ class ChildSecurityStatusEvaluatorTest {
         assertEquals(2, decoded.report.dnsBlockedResponseCount)
         assertEquals(3, decoded.report.dnsAllowedForwardedCount)
         assertEquals(1, decoded.report.dnsAllowedForwardFailureCount)
+        assertEquals("Verified debug policy", decoded.report.activePolicySource)
+        assertEquals("Basic DNS Guard", decoded.report.activePolicyPreset)
+        assertTrue(decoded.report.encryptedDnsBlockingEnabled)
+        assertTrue(decoded.report.proxyBlockingEnabled)
+        assertEquals(2, decoded.report.policyAllowDomainCount)
+        assertEquals(3, decoded.report.policyBlockDomainCount)
     }
 
     @Test
@@ -191,6 +203,12 @@ class ChildSecurityStatusEvaluatorTest {
         dnsBlockedResponseCount: Long = 0,
         dnsAllowedForwardedCount: Long = 0,
         dnsAllowedForwardFailureCount: Long = 0,
+        activePolicySource: String? = null,
+        activePolicyPreset: String? = null,
+        encryptedDnsBlockingEnabled: Boolean = true,
+        proxyBlockingEnabled: Boolean = true,
+        policyAllowDomainCount: Int = 0,
+        policyBlockDomainCount: Int = 0,
     ): ChildSecurityStatusInput {
         return ChildSecurityStatusInput(
             childDeviceId = DeviceId("child-debug-device"),
@@ -217,6 +235,12 @@ class ChildSecurityStatusEvaluatorTest {
             dnsBlockedResponseCount = dnsBlockedResponseCount,
             dnsAllowedForwardedCount = dnsAllowedForwardedCount,
             dnsAllowedForwardFailureCount = dnsAllowedForwardFailureCount,
+            activePolicySource = activePolicySource,
+            activePolicyPreset = activePolicyPreset,
+            encryptedDnsBlockingEnabled = encryptedDnsBlockingEnabled,
+            proxyBlockingEnabled = proxyBlockingEnabled,
+            policyAllowDomainCount = policyAllowDomainCount,
+            policyBlockDomainCount = policyBlockDomainCount,
         )
     }
 

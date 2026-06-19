@@ -19,6 +19,12 @@ class DebugChildSecurityReportCodec {
             "heartbeatLabel=${report.heartbeatLabel.orEmpty()}",
             "setupSummaryLabel=${report.setupSummaryLabel.orEmpty()}",
             "bypassRiskLabel=${report.bypassRiskLabel.orEmpty()}",
+            "activePolicySource=${report.activePolicySource.orEmpty()}",
+            "activePolicyPreset=${report.activePolicyPreset.orEmpty()}",
+            "encryptedDnsBlockingEnabled=${report.encryptedDnsBlockingEnabled}",
+            "proxyBlockingEnabled=${report.proxyBlockingEnabled}",
+            "policyAllowDomainCount=${report.policyAllowDomainCount}",
+            "policyBlockDomainCount=${report.policyBlockDomainCount}",
             "activeMode=${report.activeMode.name}",
             "dnsBlockedResponseCount=${report.dnsBlockedResponseCount}",
             "dnsAllowedForwardedCount=${report.dnsAllowedForwardedCount}",
@@ -78,6 +84,12 @@ class DebugChildSecurityReportCodec {
                 heartbeatLabel = values["heartbeatLabel"]?.takeIf(String::isNotBlank),
                 setupSummaryLabel = values["setupSummaryLabel"]?.takeIf(String::isNotBlank),
                 bypassRiskLabel = values["bypassRiskLabel"]?.takeIf(String::isNotBlank),
+                activePolicySource = values["activePolicySource"]?.takeIf(String::isNotBlank),
+                activePolicyPreset = values["activePolicyPreset"]?.takeIf(String::isNotBlank),
+                encryptedDnsBlockingEnabled = values["encryptedDnsBlockingEnabled"].toBooleanOrDefault(defaultValue = true),
+                proxyBlockingEnabled = values["proxyBlockingEnabled"].toBooleanOrDefault(defaultValue = true),
+                policyAllowDomainCount = values["policyAllowDomainCount"]?.toIntOrNull() ?: 0,
+                policyBlockDomainCount = values["policyBlockDomainCount"]?.toIntOrNull() ?: 0,
                 activeMode = activeMode,
                 dnsBlockedResponseCount = values["dnsBlockedResponseCount"]?.toLongOrNull() ?: 0,
                 dnsAllowedForwardedCount = values["dnsAllowedForwardedCount"]?.toLongOrNull() ?: 0,
@@ -90,6 +102,15 @@ class DebugChildSecurityReportCodec {
 
     private inline fun <reified T : Enum<T>> enumValueOrNull(value: String): T? {
         return enumValues<T>().firstOrNull { enumValue -> enumValue.name == value }
+    }
+
+    private fun String?.toBooleanOrDefault(defaultValue: Boolean): Boolean {
+        return when (this?.trim()?.lowercase()) {
+            "true" -> true
+            "false" -> false
+            null, "" -> defaultValue
+            else -> defaultValue
+        }
     }
 
     companion object {

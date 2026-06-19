@@ -15,8 +15,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.vordain.guard.core.model.DeviceId
 import com.vordain.guard.core.model.DomainName
-import com.vordain.guard.core.model.LockdownMode
 import com.vordain.guard.core.model.PolicyId
+import com.vordain.guard.core.intelligence.EncryptedDnsResolverSeedList
+import com.vordain.guard.core.policy.DefaultPolicyEngine
 import com.vordain.guard.core.pairing.DebugPairingAcceptanceCodec
 import com.vordain.guard.core.pairing.DebugPairingAcceptanceCodecResult
 import com.vordain.guard.core.pairing.DebugPairingInviteCodec
@@ -31,6 +32,8 @@ import com.vordain.guard.core.pairing.PairingSessionId
 import com.vordain.guard.core.pairing.PairingStatus
 import com.vordain.guard.core.pairing.PairingVerificationCode
 import com.vordain.guard.core.policy.Policy
+import com.vordain.guard.core.policypresets.PolicyPreset
+import com.vordain.guard.core.policypresets.PolicyPresetFactory
 import com.vordain.guard.core.policysync.DebugPolicyUpdateCodec
 import com.vordain.guard.core.policysync.PolicyUpdateSignature
 import com.vordain.guard.core.policysync.PolicyVersion
@@ -64,13 +67,21 @@ class ParentMainActivity : Activity() {
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
     private val childSecurityReportCodec = DebugChildSecurityReportCodec()
     private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
+    private val policyPresetFactory = PolicyPresetFactory()
+    private val policyPreviewEngine = DefaultPolicyEngine()
+    private val encryptedDnsResolverSeedList = EncryptedDnsResolverSeedList()
     private lateinit var stateStore: ParentDebugStateStore
     private lateinit var targetDeviceInput: EditText
     private lateinit var policyVersionInput: EditText
     private lateinit var allowDomainsInput: EditText
     private lateinit var blockDomainsInput: EditText
     private lateinit var blockKnownProxyInput: CheckBox
+    private lateinit var blockEncryptedDnsInput: CheckBox
     private lateinit var blockUnknownInput: CheckBox
+    private lateinit var presetDescriptionOutput: TextView
+    private lateinit var policySummaryOutput: TextView
+    private lateinit var policyPreviewDomainInput: EditText
+    private lateinit var policyPreviewOutput: TextView
     private lateinit var payloadOutput: TextView
     private lateinit var pairingSessionInput: EditText
     private lateinit var parentDeviceInput: EditText
@@ -95,6 +106,7 @@ class ParentMainActivity : Activity() {
     private var decodedChildSecurityStatusReport: ChildSecurityStatusReport? = null
     private var lastBypassRiskReportPayload: String = ""
     private var decodedBypassRiskReport: DebugBypassRiskReport? = null
+    private var selectedPolicyPreset: PolicyPreset = PolicyPreset.BASIC_DNS_GUARD
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -125,6 +137,7 @@ class ParentMainActivity : Activity() {
         lastHardeningSetupReportPayload = snapshot.latestHardeningSetupReportPayload.orEmpty()
         lastChildSecurityStatusReportPayload = snapshot.latestChildSecurityStatusReportPayload.orEmpty()
         lastBypassRiskReportPayload = snapshot.latestBypassRiskReportPayload.orEmpty()
+        selectedPolicyPreset = snapshot.selectedPolicyPreset.toPolicyPreset()
         pairingSessionInput = editText(snapshot.pairingSessionId)
         parentDeviceInput = editText(snapshot.parentDeviceId)
         parentDisplayNameInput = editText(snapshot.parentDisplayName)
@@ -139,6 +152,7 @@ class ParentMainActivity : Activity() {
         allowDomainsInput = editText(snapshot.allowDomainsText)
         blockDomainsInput = editText(snapshot.blockDomainsText)
         blockKnownProxyInput = checkBox("Block known proxy domains", checked = snapshot.blockKnownProxyDomains)
+        blockEncryptedDnsInput = checkBox("Block encrypted DNS resolver domains", checked = snapshot.blockEncryptedDnsResolvers)
         blockUnknownInput = checkBox("Block unknown domains", checked = snapshot.blockUnknownDomains)
 
         layout.addView(sectionTitle("Debug pairing handoff"))
@@ -162,13 +176,32 @@ class ParentMainActivity : Activity() {
         layout.addView(pairingOutput)
         layout.addView(valueLabel("Production pairing will use encrypted delivery and real key verification later.", 14f))
 
-        layout.addView(sectionTitle("Debug policy fields"))
+        layout.addView(sectionTitle("DNS policy editor"))
+        layout.addView(valueLabel("DNS-only filtering is not full protection.", 14f))
+        layout.addView(valueLabel("Production sync will use encrypted relay later.", 14f))
         layout.addView(labeledField("Target child device id", targetDeviceInput))
         layout.addView(labeledField("Policy version", policyVersionInput))
+        layout.addView(valueLabel("Policy preset", 14f))
+        layout.addView(horizontalButtons(
+            "Basic DNS Guard" to { selectPolicyPreset(PolicyPreset.BASIC_DNS_GUARD) },
+            "Strict Browser" to { selectPolicyPreset(PolicyPreset.STRICT_BROWSER) },
+        ))
+        layout.addView(horizontalButtons(
+            "School Friendly" to { selectPolicyPreset(PolicyPreset.SCHOOL_FRIENDLY) },
+            "High Risk Lockdown" to { selectPolicyPreset(PolicyPreset.HIGH_RISK_LOCKDOWN) },
+        ))
+        layout.addView(button("Custom") {
+            selectPolicyPreset(PolicyPreset.CUSTOM)
+        })
+        presetDescriptionOutput = valueLabel(createPresetDescription(), 14f)
+        layout.addView(presetDescriptionOutput)
         layout.addView(labeledField("Allow domains", allowDomainsInput))
         layout.addView(labeledField("Block domains", blockDomainsInput))
         layout.addView(blockKnownProxyInput)
+        layout.addView(blockEncryptedDnsInput)
         layout.addView(blockUnknownInput)
+        policySummaryOutput = valueLabel(createPolicySummary(), 14f)
+        layout.addView(policySummaryOutput)
 
         layout.addView(button("Build debug policy update") {
             buildDebugPolicyUpdate()
@@ -176,6 +209,14 @@ class ParentMainActivity : Activity() {
         layout.addView(button("Copy debug policy update") {
             copyPayload()
         })
+        layout.addView(sectionTitle("Policy preview"))
+        policyPreviewDomainInput = editText("blocked.example")
+        layout.addView(labeledField("Test domain", policyPreviewDomainInput))
+        layout.addView(button("Preview selected policy") {
+            previewSelectedPolicy()
+        })
+        policyPreviewOutput = valueLabel("No policy preview yet", 14f)
+        layout.addView(policyPreviewOutput)
 
         layout.addView(sectionTitle("Payload preview"))
         payloadOutput = valueLabel(lastPayload.ifBlank { "No debug policy update built yet" }, 14f)
@@ -303,6 +344,8 @@ class ParentMainActivity : Activity() {
             val policyVersion = policyVersionInput.text.toString().trim()
             require(policyVersion.isNotBlank()) { "Policy version is required" }
             val issuedAtMillis = System.currentTimeMillis()
+            val selectedPolicy = createSelectedPolicy(policyVersion)
+            val presetDefinition = policyPresetFactory.describe(selectedPolicyPreset)
             val update = SignedPolicyUpdate(
                 updateId = "debug-$policyVersion",
                 targetDeviceId = DeviceId(targetDeviceId),
@@ -310,16 +353,10 @@ class ParentMainActivity : Activity() {
                 issuedAtMillis = issuedAtMillis,
                 expiresAtMillis = issuedAtMillis + DEBUG_UPDATE_TTL_MILLIS,
                 signature = PolicyUpdateSignature("debug-signature"),
-                policy = Policy(
-                    id = PolicyId("debug-$policyVersion"),
-                    mode = LockdownMode.STANDARD,
-                    allowedDomains = allowDomainsInput.text.toString().toDomainSet(),
-                    blockedDomains = blockDomainsInput.text.toString().toDomainSet(),
-                    allowedPackages = emptySet(),
-                    blockedPackages = emptySet(),
-                    blockUnknownDomains = blockUnknownInput.isChecked,
-                    blockKnownProxyDomains = blockKnownProxyInput.isChecked,
-                ),
+                presetName = selectedPolicyPreset.name,
+                blockEncryptedDnsResolvers = blockEncryptedDnsInput.isChecked,
+                policyDisplayLabel = presetDefinition.displayName,
+                policy = selectedPolicy,
             )
             codec.encode(update)
         }
@@ -327,6 +364,9 @@ class ParentMainActivity : Activity() {
         lastPayload = result.getOrDefault("")
         payloadOutput.text = result.getOrElse { throwable ->
             "Could not build debug policy update: ${throwable.message}"
+        }
+        if (result.isSuccess) {
+            payloadOutput.text = "${result.getOrDefault("")}\n\n${createPolicySummary()}"
         }
         stateStore.save(createSnapshot())
     }
@@ -351,7 +391,9 @@ class ParentMainActivity : Activity() {
             allowDomainsText = allowDomainsInput.text.toString(),
             blockDomainsText = blockDomainsInput.text.toString(),
             blockKnownProxyDomains = blockKnownProxyInput.isChecked,
+            blockEncryptedDnsResolvers = blockEncryptedDnsInput.isChecked,
             blockUnknownDomains = blockUnknownInput.isChecked,
+            selectedPolicyPreset = selectedPolicyPreset.name,
             latestGeneratedPayload = lastPayload.takeIf(String::isNotBlank),
             pairingSessionId = pairingSessionInput.text.toString(),
             parentDeviceId = parentDeviceInput.text.toString(),
@@ -453,6 +495,11 @@ class ParentMainActivity : Activity() {
             "Child device id: ${report.childDeviceId.value}",
             "Generated at: ${report.generatedAtMillis}",
             "Policy version: ${report.policyVersion ?: "none"}",
+            "Active policy source: ${report.activePolicySource ?: "Unknown"}",
+            "Active policy preset: ${report.activePolicyPreset ?: "unspecified"}",
+            "Encrypted DNS blocking: ${if (report.encryptedDnsBlockingEnabled) "enabled" else "not requested"}",
+            "Proxy blocking: ${if (report.proxyBlockingEnabled) "enabled" else "not requested"}",
+            "Policy allow/block counts: ${report.policyAllowDomainCount}/${report.policyBlockDomainCount}",
             "VPN/session: ${report.vpnSessionLabel ?: "Unknown"}",
             "Setup summary: ${report.setupSummaryLabel ?: "Unknown"}",
             "Heartbeat: ${report.heartbeatLabel ?: "Unknown"}",
@@ -528,12 +575,87 @@ class ParentMainActivity : Activity() {
         }
     }
 
+    private fun selectPolicyPreset(preset: PolicyPreset) {
+        selectedPolicyPreset = preset
+        val definition = policyPresetFactory.describe(preset)
+        allowDomainsInput.setText(definition.defaultAllowedDomains.toDomainText())
+        blockDomainsInput.setText(definition.defaultBlockedDomains.toDomainText())
+        blockKnownProxyInput.isChecked = definition.blockKnownProxyDomains
+        blockEncryptedDnsInput.isChecked = definition.blockEncryptedDnsResolvers
+        blockUnknownInput.isChecked = definition.blockUnknownDomains
+        presetDescriptionOutput.text = createPresetDescription()
+        policySummaryOutput.text = createPolicySummary()
+        stateStore.save(createSnapshot())
+    }
+
+    private fun createPresetDescription(): String {
+        val definition = policyPresetFactory.describe(selectedPolicyPreset)
+        return listOf(
+            "Selected preset: ${definition.displayName}",
+            definition.description,
+            definition.warningText,
+        ).joinToString(separator = "\n")
+    }
+
+    private fun createPolicySummary(): String {
+        val selectedPolicy = createSelectedPolicy(policyVersionInput.text.toString().ifBlank { "debug-preview" })
+        return listOf(
+            "Policy summary",
+            "Preset: ${policyPresetFactory.describe(selectedPolicyPreset).displayName}",
+            "Allow count: ${selectedPolicy.allowedDomains.size}",
+            "Block count: ${selectedPolicy.blockedDomains.size}",
+            "Encrypted-DNS blocking enabled: ${blockEncryptedDnsInput.isChecked}",
+            "Proxy blocking enabled: ${selectedPolicy.blockKnownProxyDomains}",
+            "Unknown-domain behavior: ${if (selectedPolicy.blockUnknownDomains) "blocked" else "allowed unless listed"}",
+            "DNS-only filtering is not full protection.",
+        ).joinToString(separator = "\n")
+    }
+
+    private fun previewSelectedPolicy() {
+        val output = runCatching {
+            val domain = DomainName.from(policyPreviewDomainInput.text.toString())
+            val selectedPolicy = createSelectedPolicy(policyVersionInput.text.toString().ifBlank { "debug-preview" })
+            val encryptedDnsMatch = encryptedDnsResolverSeedList.classify(domain)
+            val evaluation = policyPreviewEngine.evaluateDomain(domain, selectedPolicy)
+            listOf(
+                "Normalized domain: ${domain.value}",
+                "Decision: ${if (encryptedDnsMatch != null && blockEncryptedDnsInput.isChecked) "BLOCK" else evaluation.decision.name}",
+                "Reason: ${encryptedDnsMatch?.reason ?: evaluation.reason.name}",
+                "Encrypted DNS seed block applies: ${encryptedDnsMatch != null && blockEncryptedDnsInput.isChecked}",
+                "Event would be created: ${if (encryptedDnsMatch != null && blockEncryptedDnsInput.isChecked) "yes" else if (evaluation.shouldCreateEvent) "yes" else "no"}",
+            ).joinToString(separator = "\n")
+        }.getOrElse { throwable ->
+            "Preview rejected: ${throwable.message}"
+        }
+        policyPreviewOutput.text = output
+        policySummaryOutput.text = createPolicySummary()
+        stateStore.save(createSnapshot())
+    }
+
+    private fun createSelectedPolicy(policyVersion: String): Policy {
+        val definition = policyPresetFactory.describe(selectedPolicyPreset)
+        return Policy(
+            id = PolicyId("debug-$policyVersion"),
+            mode = definition.lockdownMode,
+            allowedDomains = allowDomainsInput.text.toString().toDomainSet(),
+            blockedDomains = blockDomainsInput.text.toString().toDomainSet(),
+            allowedPackages = emptySet(),
+            blockedPackages = emptySet(),
+            blockUnknownDomains = blockUnknownInput.isChecked,
+            blockKnownProxyDomains = blockKnownProxyInput.isChecked,
+        )
+    }
+
     private fun String.toDomainSet(): Set<DomainName> {
-        return split(',')
+        return split(',', '\n')
             .map(String::trim)
             .filter(String::isNotEmpty)
             .map(DomainName::from)
             .toSet()
+    }
+
+    private fun Set<DomainName>.toDomainText(): String {
+        return map(DomainName::value).sorted().joinToString(separator = "\n")
     }
 
     private fun centerLabel(text: String, textSize: Float): TextView {
@@ -592,6 +714,21 @@ class ParentMainActivity : Activity() {
         return Button(this).apply {
             this.text = text
             setOnClickListener { onClick() }
+        }
+    }
+
+    private fun horizontalButtons(vararg buttons: Pair<String, () -> Unit>): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            buttons.forEach { (text, onClick) ->
+                addView(button(text, onClick).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        1f,
+                    )
+                })
+            }
         }
     }
 
@@ -712,6 +849,10 @@ class ParentMainActivity : Activity() {
             ChildSecuritySignal.PIN_COMPROMISE_SUSPECTED -> "PIN may be compromised"
             ChildSecuritySignal.VPN_STOPPED -> "VPN stopped"
         }
+    }
+
+    private fun String.toPolicyPreset(): PolicyPreset {
+        return runCatching { PolicyPreset.valueOf(this) }.getOrDefault(PolicyPreset.CUSTOM)
     }
 
     private fun BypassRiskOverallStatus.toDisplayLabel(): String {

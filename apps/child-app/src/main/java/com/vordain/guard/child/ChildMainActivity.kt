@@ -30,6 +30,8 @@ import com.vordain.guard.core.pairing.PairingRole
 import com.vordain.guard.core.pairing.PairingStatus
 import com.vordain.guard.core.pairing.PairingVerificationCode
 import com.vordain.guard.core.policysync.PersistedSignedPolicySnapshot
+import com.vordain.guard.core.policysync.DebugPolicyUpdateCodec
+import com.vordain.guard.core.policysync.DebugPolicyUpdateCodecResult
 import com.vordain.guard.core.policysync.PolicyVersion
 import com.vordain.guard.core.policysync.SignedPolicySnapshotRestorer
 import com.vordain.guard.core.statusreport.ChildSecurityActiveMode
@@ -73,6 +75,7 @@ class ChildMainActivity : Activity() {
     private val pairingInviteCodec = DebugPairingInviteCodec()
     private val pairingAcceptanceCodec = DebugPairingAcceptanceCodec()
     private val pairingEvaluator = PairingEvaluator()
+    private val debugPolicyUpdateCodec = DebugPolicyUpdateCodec()
     private val policyDemo = ChildDebugPolicyDemo()
     private val compatibilityDemo = ChildDebugCompatibilityDemo { System.currentTimeMillis() }
     private val reviewDemo = ChildDebugReviewDemo()
@@ -120,6 +123,10 @@ class ChildMainActivity : Activity() {
     private var latestAllowDomainsCsv: String? = null
     private var latestBlockDomainsCsv: String? = null
     private var currentPolicySource: String = "Default sample policy"
+    private var currentPolicyPresetName: String? = null
+    private var currentPolicyDisplayLabel: String? = null
+    private var currentPolicyBlockEncryptedDnsResolvers: Boolean = true
+    private var lastPolicyVerificationResult: String = "No debug policy verified yet"
     private var childDisplayName: String = ChildDebugStateSnapshot.DEFAULT_CHILD_DISPLAY_NAME
     private var childFingerprint: String = ChildDebugStateSnapshot.DEFAULT_CHILD_FINGERPRINT
     private var latestPairingInvitePayload: String? = null
@@ -555,16 +562,17 @@ class ChildMainActivity : Activity() {
         layout.addView(button("Apply debug policy update") {
             applyDebugPolicyUpdate()
         })
-        layout.addView(button("Clear policy update result") {
+        layout.addView(button("Clear applied debug policy") {
             clearPolicyHandoffResult()
         })
+        layout.addView(button("Re-verify stored policy") {
+            reverifyStoredPolicy()
+        })
+        layout.addView(button("Copy active policy diagnostics") {
+            copyActivePolicyDiagnostics()
+        })
         policyHandoffOutputText = valueLabel(
-            buildString {
-                append("Current debug policy source: $currentPolicySource\n")
-                append(policyDemo.policySummary(currentPolicyVersion))
-                latestAllowDomainsCsv?.let { append("\nLatest allow domains: $it") }
-                latestBlockDomainsCsv?.let { append("\nLatest block domains: $it") }
-            },
+            createActivePolicyDisplay(),
             textSize = 14f,
         )
         layout.addView(policyHandoffOutputText)
@@ -998,24 +1006,77 @@ class ChildMainActivity : Activity() {
         )
         policyHandoffResult = result
         if (result.accepted && result.policy != null && result.policyVersion != null) {
-            policyDemo.replacePolicy(result.policy)
+            policyDemo.replacePolicy(
+                policy = result.policy,
+                blockEncryptedDnsResolvers = result.blockEncryptedDnsResolvers,
+            )
             currentPolicyVersion = result.policyVersion.value
             latestPolicyPayload = policyHandoffPayloadInput.text.toString()
             latestPolicyAppliedAtMillis = System.currentTimeMillis()
             latestAllowDomainsCsv = result.policy.allowedDomains.toCsv()
             latestBlockDomainsCsv = result.policy.blockedDomains.toCsv()
             currentPolicySource = "Verified applied debug policy"
+            currentPolicyPresetName = result.presetName
+            currentPolicyDisplayLabel = result.policyDisplayLabel
+            currentPolicyBlockEncryptedDnsResolvers = result.blockEncryptedDnsResolvers
+            lastPolicyVerificationResult = result.reason
             LabCaptureDebugStatus.useVerifiedPolicy(result.policy)
+        } else {
+            lastPolicyVerificationResult = result.reason
         }
-        policyHandoffOutputText.text = result.asDisplayText()
+        policyHandoffOutputText.text = "${result.asDisplayText()}\n\n${createActivePolicyDisplay()}"
         saveCurrentState()
         refreshDiagnosticsViews()
     }
 
     private fun clearPolicyHandoffResult() {
         policyHandoffResult = null
-        policyHandoffOutputText.text = policyDemo.policySummary(currentPolicyVersion)
+        latestPolicyPayload = null
+        latestPolicyAppliedAtMillis = 0L
+        latestAllowDomainsCsv = null
+        latestBlockDomainsCsv = null
+        currentPolicySource = "Default sample policy"
+        currentPolicyVersion = "debug-tablet-policy"
+        currentPolicyPresetName = null
+        currentPolicyDisplayLabel = null
+        currentPolicyBlockEncryptedDnsResolvers = true
+        lastPolicyVerificationResult = "Applied debug policy cleared"
+        policyDemo.resetToDefault()
+        LabCaptureDebugStatus.useDefaultPolicy()
+        policyHandoffPayloadInput.setText("")
+        policyHandoffOutputText.text = createActivePolicyDisplay()
+        saveCurrentState()
         refreshDiagnosticsViews()
+    }
+
+    private fun reverifyStoredPolicy() {
+        val payload = latestPolicyPayload ?: policyHandoffPayloadInput.text.toString().takeIf(String::isNotBlank)
+        if (payload.isNullOrBlank()) {
+            lastPolicyVerificationResult = "No stored debug policy payload to re-verify"
+            policyHandoffOutputText.text = createActivePolicyDisplay()
+            refreshDiagnosticsViews()
+            return
+        }
+        restorePersistedPolicyPayload(
+            payload = payload,
+            appliedAtMillis = latestPolicyAppliedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis(),
+            lastKnownPolicyVersion = currentPolicyVersion,
+        )
+        policyHandoffOutputText.text = createActivePolicyDisplay()
+        saveCurrentState()
+        refreshDiagnosticsViews()
+    }
+
+    private fun copyActivePolicyDiagnostics() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "Vordain active DNS-only lab policy diagnostics",
+                createActivePolicyDisplay(),
+            ),
+        )
+        policyHandoffOutputText.text = "${createActivePolicyDisplay()}\n\nCopied active policy diagnostics."
+        saveCurrentState()
     }
 
     private fun acceptPairingInvite() {
@@ -1231,6 +1292,8 @@ class ChildMainActivity : Activity() {
             "Byte count: ${stats.byteCount}",
             "Active lab policy source: $currentPolicySource",
             "Active policy version: $currentPolicyVersion",
+            "Active policy preset: ${currentPolicyDisplayLabel ?: currentPolicyPresetName ?: "unspecified"}",
+            "Encrypted DNS resolver blocking: ${if (currentPolicyBlockEncryptedDnsResolvers) "enabled" else "not requested"}",
             "Latest allow/block counts: ${latestAllowDomainsCsv.countCsvEntries()}/${latestBlockDomainsCsv.countCsvEntries()}",
             "Upstream DNS: ${stats.dnsUpstreamHost}:${stats.dnsUpstreamPort}",
             "DNS packet count: ${stats.dnsPacketCount}",
@@ -1379,6 +1442,12 @@ class ChildMainActivity : Activity() {
                 noUnrestrictedProfilesConfirmed = noUnrestrictedProfilesConfirmed,
                 policyVersion = currentPolicyVersion.takeIf { currentPolicySource.startsWith("Verified") },
                 policyApplied = currentPolicySource.startsWith("Verified"),
+                activePolicySource = currentPolicySource,
+                activePolicyPreset = currentPolicyDisplayLabel ?: currentPolicyPresetName,
+                encryptedDnsBlockingEnabled = currentPolicyBlockEncryptedDnsResolvers,
+                proxyBlockingEnabled = policyDemo.blockKnownProxyDomains(),
+                policyAllowDomainCount = policyDemo.allowDomainCount(),
+                policyBlockDomainCount = policyDemo.blockDomainCount(),
                 vpnSessionLabel = shellStatus,
                 vpnSessionRunning = shellStatus == ChildVpnSmokeLabels.STATUS_SHELL_ACTIVE || labCaptureActive,
                 vpnStopped = shellStatus == ChildVpnSmokeLabels.STATUS_STOPPED ||
@@ -1403,6 +1472,11 @@ class ChildMainActivity : Activity() {
             append("Child device id: ${report.childDeviceId.value}\n")
             append("Generated at: ${report.generatedAtMillis}\n")
             append("Policy version: ${report.policyVersion ?: "none"}\n")
+            append("Active policy source: ${report.activePolicySource ?: "Unknown"}\n")
+            append("Active policy preset: ${report.activePolicyPreset ?: "unspecified"}\n")
+            append("Encrypted DNS blocking: ${if (report.encryptedDnsBlockingEnabled) "enabled" else "not requested"}\n")
+            append("Proxy blocking: ${if (report.proxyBlockingEnabled) "enabled" else "not requested"}\n")
+            append("Policy allow/block counts: ${report.policyAllowDomainCount}/${report.policyBlockDomainCount}\n")
             append("VPN/session: ${report.vpnSessionLabel ?: "Unknown"}\n")
             append("Setup summary: ${report.setupSummaryLabel ?: "Unknown"}\n")
             append("Heartbeat: ${report.heartbeatLabel ?: "Unknown"}\n")
@@ -1425,6 +1499,69 @@ class ChildMainActivity : Activity() {
             generatedAtMillis = System.currentTimeMillis(),
             summary = currentBypassRiskSummary(),
         )
+    }
+
+    private fun createActivePolicyDisplay(): String {
+        return buildString {
+            append("Active policy source: $currentPolicySource\n")
+            append("Active policy version: $currentPolicyVersion\n")
+            append("Preset: ${currentPolicyDisplayLabel ?: currentPolicyPresetName ?: "unspecified"}\n")
+            append("Allow domain count: ${policyDemo.allowDomainCount()}\n")
+            append("Block domain count: ${policyDemo.blockDomainCount()}\n")
+            append("Proxy blocking: ${if (policyDemo.blockKnownProxyDomains()) "enabled" else "not requested"}\n")
+            append("Encrypted DNS resolver blocking: ${if (currentPolicyBlockEncryptedDnsResolvers) "enabled" else "not requested"}\n")
+            append("Unknown-domain behavior: ${if (policyDemo.blockUnknownDomains()) "blocked" else "allowed unless listed"}\n")
+            append("Last verification result: $lastPolicyVerificationResult\n")
+            append(policyDemo.policySummary(currentPolicyVersion))
+            latestAllowDomainsCsv?.let { append("\nLatest allow domains: $it") }
+            latestBlockDomainsCsv?.let { append("\nLatest block domains: $it") }
+            append("\nFiltering is not production-enabled yet. Not full protection.")
+        }
+    }
+
+    private fun restorePersistedPolicyPayload(
+        payload: String,
+        appliedAtMillis: Long,
+        lastKnownPolicyVersion: String?,
+    ) {
+        val restored = policySnapshotRestorer.restore(
+            snapshot = PersistedSignedPolicySnapshot(
+                encodedPayload = payload,
+                appliedAtMillis = appliedAtMillis,
+                expectedDeviceId = DeviceId(childDeviceId),
+                lastKnownPolicyVersion = lastKnownPolicyVersion?.let(::PolicyVersion),
+            ),
+            currentTimeMillis = System.currentTimeMillis(),
+        )
+        val restoredPolicy = restored.policy
+        val restoredPolicyVersion = restored.policyVersion
+        if (restored.accepted && restoredPolicy != null && restoredPolicyVersion != null) {
+            val decoded = debugPolicyUpdateCodec.decode(payload)
+            val decodedUpdate = (decoded as? DebugPolicyUpdateCodecResult.Decoded)?.update
+            policyDemo.replacePolicy(
+                policy = restoredPolicy,
+                blockEncryptedDnsResolvers = decodedUpdate?.blockEncryptedDnsResolvers ?: true,
+            )
+            currentPolicyVersion = restoredPolicyVersion.value
+            latestPolicyPayload = payload
+            latestPolicyAppliedAtMillis = appliedAtMillis
+            latestAllowDomainsCsv = restoredPolicy.allowedDomains.toCsv()
+            latestBlockDomainsCsv = restoredPolicy.blockedDomains.toCsv()
+            currentPolicySource = "Verified persisted debug policy"
+            currentPolicyPresetName = decodedUpdate?.presetName
+            currentPolicyDisplayLabel = decodedUpdate?.policyDisplayLabel
+            currentPolicyBlockEncryptedDnsResolvers = decodedUpdate?.blockEncryptedDnsResolvers ?: true
+            lastPolicyVerificationResult = restored.reason.toString()
+            LabCaptureDebugStatus.useVerifiedPolicy(restoredPolicy)
+        } else {
+            currentPolicySource = "Persisted policy rejected: ${restored.reason}"
+            currentPolicyPresetName = null
+            currentPolicyDisplayLabel = null
+            currentPolicyBlockEncryptedDnsResolvers = true
+            lastPolicyVerificationResult = restored.reason.toString()
+            policyDemo.resetToDefault()
+            LabCaptureDebugStatus.useDefaultPolicy()
+        }
     }
 
     private fun currentBypassRiskSummary() = bypassRiskEvaluator.summarize(currentBypassRiskItems())
@@ -1528,6 +1665,9 @@ class ChildMainActivity : Activity() {
         latestPolicyPayload = snapshot.latestPolicyPayload
         latestPolicyAppliedAtMillis = snapshot.latestPolicyAppliedAtMillis
         currentPolicyVersion = snapshot.latestPolicyVersion ?: currentPolicyVersion
+        currentPolicyPresetName = snapshot.latestPolicyPresetName
+        currentPolicyDisplayLabel = snapshot.latestPolicyDisplayLabel
+        currentPolicyBlockEncryptedDnsResolvers = snapshot.latestPolicyBlockEncryptedDnsResolvers
         latestAllowDomainsCsv = snapshot.latestAllowDomainsCsv
         latestBlockDomainsCsv = snapshot.latestBlockDomainsCsv
         childDisplayName = snapshot.childDisplayName
@@ -1553,29 +1693,13 @@ class ChildMainActivity : Activity() {
 
         val payload = snapshot.latestPolicyPayload
         if (!payload.isNullOrBlank()) {
-            val restored = policySnapshotRestorer.restore(
-                snapshot = PersistedSignedPolicySnapshot(
-                    encodedPayload = payload,
-                    appliedAtMillis = snapshot.latestPolicyAppliedAtMillis,
-                    expectedDeviceId = DeviceId(childDeviceId),
-                    lastKnownPolicyVersion = snapshot.latestPolicyVersion?.let(::PolicyVersion),
-                ),
-                currentTimeMillis = System.currentTimeMillis(),
+            restorePersistedPolicyPayload(
+                payload = payload,
+                appliedAtMillis = snapshot.latestPolicyAppliedAtMillis,
+                lastKnownPolicyVersion = snapshot.latestPolicyVersion,
             )
-            val restoredPolicy = restored.policy
-            val restoredPolicyVersion = restored.policyVersion
-            if (restored.accepted && restoredPolicy != null && restoredPolicyVersion != null) {
-                policyDemo.replacePolicy(restoredPolicy)
-                currentPolicyVersion = restoredPolicyVersion.value
-                latestAllowDomainsCsv = restoredPolicy.allowedDomains.toCsv()
-                latestBlockDomainsCsv = restoredPolicy.blockedDomains.toCsv()
-                currentPolicySource = "Verified persisted debug policy"
-                LabCaptureDebugStatus.useVerifiedPolicy(restoredPolicy)
-            } else {
-                currentPolicySource = "Persisted policy rejected: ${restored.reason}"
-                LabCaptureDebugStatus.useDefaultPolicy()
-            }
         } else {
+            lastPolicyVerificationResult = "No debug policy verified yet"
             LabCaptureDebugStatus.useDefaultPolicy()
         }
     }
@@ -1594,6 +1718,9 @@ class ChildMainActivity : Activity() {
                 latestPolicyPayload = latestPolicyPayload,
                 latestPolicyAppliedAtMillis = latestPolicyAppliedAtMillis,
                 latestPolicyVersion = currentPolicyVersion,
+                latestPolicyPresetName = currentPolicyPresetName,
+                latestPolicyDisplayLabel = currentPolicyDisplayLabel,
+                latestPolicyBlockEncryptedDnsResolvers = currentPolicyBlockEncryptedDnsResolvers,
                 latestAllowDomainsCsv = latestAllowDomainsCsv,
                 latestBlockDomainsCsv = latestBlockDomainsCsv,
                 childDisplayName = if (::childDisplayNameInput.isInitialized) {

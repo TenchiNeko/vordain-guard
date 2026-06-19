@@ -16,7 +16,10 @@ class ParentDebugStateStore(context: Context) {
             blockDomainsText = preferences.getString(KEY_BLOCK_DOMAINS_TEXT, null)
                 ?: ParentDebugStateSnapshot.DEFAULT_BLOCK_DOMAINS,
             blockKnownProxyDomains = preferences.getBoolean(KEY_BLOCK_KNOWN_PROXY_DOMAINS, true),
+            blockEncryptedDnsResolvers = preferences.getBoolean(KEY_BLOCK_ENCRYPTED_DNS_RESOLVERS, true),
             blockUnknownDomains = preferences.getBoolean(KEY_BLOCK_UNKNOWN_DOMAINS, false),
+            selectedPolicyPreset = preferences.getString(KEY_SELECTED_POLICY_PRESET, null)
+                ?: ParentDebugStateSnapshot.DEFAULT_POLICY_PRESET,
             latestGeneratedPayload = preferences.getString(KEY_LATEST_GENERATED_PAYLOAD, null),
             pairingSessionId = preferences.getString(KEY_PAIRING_SESSION_ID, null)
                 ?: ParentDebugStateSnapshot.DEFAULT_PAIRING_SESSION_ID,
@@ -47,7 +50,9 @@ class ParentDebugStateStore(context: Context) {
             .putString(KEY_ALLOW_DOMAINS_TEXT, snapshot.allowDomainsText)
             .putString(KEY_BLOCK_DOMAINS_TEXT, snapshot.blockDomainsText)
             .putBoolean(KEY_BLOCK_KNOWN_PROXY_DOMAINS, snapshot.blockKnownProxyDomains)
+            .putBoolean(KEY_BLOCK_ENCRYPTED_DNS_RESOLVERS, snapshot.blockEncryptedDnsResolvers)
             .putBoolean(KEY_BLOCK_UNKNOWN_DOMAINS, snapshot.blockUnknownDomains)
+            .putString(KEY_SELECTED_POLICY_PRESET, snapshot.selectedPolicyPreset)
             .putString(KEY_LATEST_GENERATED_PAYLOAD, snapshot.latestGeneratedPayload)
             .putString(KEY_PAIRING_SESSION_ID, snapshot.pairingSessionId)
             .putString(KEY_PARENT_DEVICE_ID, snapshot.parentDeviceId)
@@ -73,7 +78,9 @@ class ParentDebugStateStore(context: Context) {
         const val KEY_ALLOW_DOMAINS_TEXT = "allow_domains_text"
         const val KEY_BLOCK_DOMAINS_TEXT = "block_domains_text"
         const val KEY_BLOCK_KNOWN_PROXY_DOMAINS = "block_known_proxy_domains"
+        const val KEY_BLOCK_ENCRYPTED_DNS_RESOLVERS = "block_encrypted_dns_resolvers"
         const val KEY_BLOCK_UNKNOWN_DOMAINS = "block_unknown_domains"
+        const val KEY_SELECTED_POLICY_PRESET = "selected_policy_preset"
         const val KEY_LATEST_GENERATED_PAYLOAD = "latest_generated_payload"
         const val KEY_PAIRING_SESSION_ID = "pairing_session_id"
         const val KEY_PARENT_DEVICE_ID = "parent_device_id"
@@ -93,7 +100,9 @@ class ParentDebugStateStore(context: Context) {
             KEY_ALLOW_DOMAINS_TEXT,
             KEY_BLOCK_DOMAINS_TEXT,
             KEY_BLOCK_KNOWN_PROXY_DOMAINS,
+            KEY_BLOCK_ENCRYPTED_DNS_RESOLVERS,
             KEY_BLOCK_UNKNOWN_DOMAINS,
+            KEY_SELECTED_POLICY_PRESET,
             KEY_LATEST_GENERATED_PAYLOAD,
             KEY_PAIRING_SESSION_ID,
             KEY_PARENT_DEVICE_ID,

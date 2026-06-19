@@ -11,4 +11,7 @@ data class SignedPolicyUpdate(
     val issuedAtMillis: Long,
     val expiresAtMillis: Long,
     val signature: PolicyUpdateSignature,
+    val presetName: String? = null,
+    val blockEncryptedDnsResolvers: Boolean = true,
+    val policyDisplayLabel: String? = null,
 )
