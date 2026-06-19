@@ -27,9 +27,13 @@ kotlin {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:policy"))
     implementation(project(":features:child-status"))
     implementation(project(":features:setup-checklist"))
     implementation(project(":data:local"))
+    implementation(project(":data:review"))
     implementation(project(":data:relay"))
+    implementation(project(":vpn:classifier"))
+    implementation(project(":vpn:engine"))
     implementation(project(":vpn:service"))
 }
