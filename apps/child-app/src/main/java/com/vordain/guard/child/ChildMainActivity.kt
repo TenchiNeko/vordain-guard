@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -32,6 +33,14 @@ import com.vordain.guard.core.policysync.PersistedSignedPolicySnapshot
 import com.vordain.guard.core.policysync.PolicyVersion
 import com.vordain.guard.core.policysync.SignedPolicySnapshotRestorer
 import com.vordain.guard.data.review.ReviewRequestReason
+import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodec
+import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodecResult
+import com.vordain.guard.features.setupchecklist.HardeningEvidenceType
+import com.vordain.guard.features.setupchecklist.HardeningSetupReducer
+import com.vordain.guard.features.setupchecklist.HardeningSetupSnapshot
+import com.vordain.guard.features.setupchecklist.HardeningSetupStatus
+import com.vordain.guard.features.setupchecklist.HardeningSetupStep
+import com.vordain.guard.features.setupchecklist.HardeningSummaryStatus
 import com.vordain.guard.vpn.lab.LabTrafficObservationStats
 import com.vordain.guard.vpn.service.LabCaptureDebugStatus
 import com.vordain.guard.vpn.service.VordainVpnServiceIntents
@@ -49,12 +58,15 @@ class ChildMainActivity : Activity() {
     private val reviewDemo = ChildDebugReviewDemo()
     private val policyHandoff = ChildDebugPolicyHandoff { System.currentTimeMillis() }
     private val diagnosticsFormatter = ChildDebugDiagnosticsFormatter()
+    private val hardeningSetupReducer = HardeningSetupReducer()
+    private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
     private lateinit var stateStore: ChildDebugStateStore
     private lateinit var statusText: TextView
     private lateinit var vpnPermissionText: TextView
     private lateinit var lastCommandText: TextView
     private lateinit var shellStatusText: TextView
     private lateinit var setupChecklistText: TextView
+    private lateinit var hardeningSetupText: TextView
     private lateinit var labCaptureText: TextView
     private lateinit var policyDomainInput: EditText
     private lateinit var policyOutputText: TextView
@@ -90,6 +102,12 @@ class ChildMainActivity : Activity() {
     private var setupAlwaysOnVpnStatus: SetupCheckState = SetupCheckState.UNKNOWN
     private var setupBlockWithoutVpnStatus: SetupCheckState = SetupCheckState.UNKNOWN
     private var setupBatteryOptimizationStatus: SetupCheckState = SetupCheckState.UNKNOWN
+    private var setupSettingsAppLockStatus: SetupCheckState = SetupCheckState.UNKNOWN
+    private var setupScreenPinningStatus: SetupCheckState = SetupCheckState.UNKNOWN
+    private var setupPrivateDnsStatus: SetupCheckState = SetupCheckState.UNKNOWN
+    private var setupUnknownSourcesStatus: SetupCheckState = SetupCheckState.UNKNOWN
+    private var hardeningSetupSnapshot: HardeningSetupSnapshot? = null
+    private var latestHardeningSetupReportPayload: String? = null
     private var lastDiagnosticsText: String? = null
     private var policyResult: ChildDebugPolicyResult? = null
     private var policyHandoffResult: ChildDebugPolicyHandoffResult? = null
@@ -120,9 +138,21 @@ class ChildMainActivity : Activity() {
 
         if (resultCode == RESULT_OK) {
             setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_GRANTED)
+            updateHardeningStep(
+                step = HardeningSetupStep.VPN_PERMISSION,
+                status = HardeningSetupStatus.AUTO_CONFIRMED,
+                evidenceType = HardeningEvidenceType.AUTOMATIC_CHECK,
+                note = "VPN permission prepared by Android.",
+            )
             setStatus(ChildVpnSmokeLabels.STATUS_PERMISSION_GRANTED)
         } else {
             setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_REQUIRED)
+            updateHardeningStep(
+                step = HardeningSetupStep.VPN_PERMISSION,
+                status = HardeningSetupStatus.NEEDS_ATTENTION,
+                evidenceType = HardeningEvidenceType.AUTOMATIC_CHECK,
+                note = "VPN permission still needs parent action.",
+            )
             setStatus(ChildVpnSmokeLabels.STATUS_PERMISSION_REQUIRED)
         }
     }
@@ -180,8 +210,103 @@ class ChildMainActivity : Activity() {
         layout.addView(labCaptureText)
 
         layout.addView(sectionTitle("Setup checklist"))
+        layout.addView(valueLabel("These steps help prevent silent bypass. Some settings must be turned on manually by the parent.", textSize = 14f))
         setupChecklistText = valueLabel("", textSize = 15f)
         layout.addView(setupChecklistText)
+        hardeningSetupText = valueLabel("", textSize = 15f)
+        layout.addView(hardeningSetupText)
+        layout.addView(button("Request VPN permission") {
+            requestVpnPermission()
+        })
+        layout.addView(button("Open VPN settings") {
+            openSettings(Settings.ACTION_VPN_SETTINGS)
+            updateHardeningStep(
+                step = HardeningSetupStep.VPN_ALWAYS_ON,
+                status = HardeningSetupStatus.OPENED_SETTINGS,
+                evidenceType = HardeningEvidenceType.MANUAL_DEVICE_SETTING,
+                note = "Open VPN settings, tap Vordain Guard, enable Always-on VPN.",
+            )
+        })
+        layout.addView(button("Mark Always-on VPN enabled") {
+            updateHardeningStep(
+                step = HardeningSetupStep.VPN_ALWAYS_ON,
+                status = HardeningSetupStatus.USER_CONFIRMED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed Always-on VPN is enabled.",
+            )
+        })
+        layout.addView(button("Mark Block without VPN enabled") {
+            updateHardeningStep(
+                step = HardeningSetupStep.BLOCK_WITHOUT_VPN,
+                status = HardeningSetupStatus.USER_CONFIRMED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "In the Vordain VPN settings, Block connections without VPN is enabled.",
+            )
+        })
+        layout.addView(button("Open Security settings") {
+            openSettings(Settings.ACTION_SECURITY_SETTINGS)
+            updateHardeningStep(
+                step = HardeningSetupStep.SETTINGS_APP_LOCK,
+                status = HardeningSetupStatus.OPENED_SETTINGS,
+                evidenceType = HardeningEvidenceType.MANUAL_DEVICE_SETTING,
+                note = "If available, lock Settings and VPN settings behind the parent PIN.",
+            )
+        })
+        layout.addView(button("Mark Settings/App Lock enabled") {
+            updateHardeningStep(
+                step = HardeningSetupStep.SETTINGS_APP_LOCK,
+                status = HardeningSetupStatus.USER_CONFIRMED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed Settings or VPN settings are locked.",
+            )
+        })
+        layout.addView(button("Mark Screen pinning with PIN enabled") {
+            updateHardeningStep(
+                step = HardeningSetupStep.SCREEN_PINNING_WITH_PIN,
+                status = HardeningSetupStatus.USER_CONFIRMED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent confirmed PIN is required to unpin.",
+            )
+        })
+        layout.addView(button("Open app/battery settings") {
+            openSettings(Settings.ACTION_APPLICATION_SETTINGS)
+            updateHardeningStep(
+                step = HardeningSetupStep.BATTERY_OPTIMIZATION,
+                status = HardeningSetupStatus.OPENED_SETTINGS,
+                evidenceType = HardeningEvidenceType.MANUAL_DEVICE_SETTING,
+                note = "Parent opened app or battery settings for review.",
+            )
+        })
+        layout.addView(button("Mark battery optimization reviewed") {
+            updateHardeningStep(
+                step = HardeningSetupStep.BATTERY_OPTIMIZATION,
+                status = HardeningSetupStatus.USER_CONFIRMED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent reviewed battery optimization behavior.",
+            )
+        })
+        layout.addView(button("Mark Private DNS reviewed") {
+            updateHardeningStep(
+                step = HardeningSetupStep.PRIVATE_DNS_REVIEW,
+                status = HardeningSetupStatus.USER_CONFIRMED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent reviewed Private DNS settings.",
+            )
+        })
+        layout.addView(button("Mark Unknown sources reviewed") {
+            updateHardeningStep(
+                step = HardeningSetupStep.UNKNOWN_SOURCES_REVIEW,
+                status = HardeningSetupStatus.USER_CONFIRMED,
+                evidenceType = HardeningEvidenceType.PARENT_CONFIRMATION,
+                note = "Parent reviewed unknown app install sources.",
+            )
+        })
+        layout.addView(button("Copy setup report") {
+            copyHardeningSetupReport()
+        })
+        layout.addView(button("Clear setup confirmations") {
+            clearHardeningSetup()
+        })
 
         layout.addView(sectionTitle("Local policy/domain tester"))
         policyDomainInput = editText("blocked.example")
@@ -368,10 +493,22 @@ class ChildMainActivity : Activity() {
         when (val result = vpnPermissionIntentFactory.createPrepareResult(this)) {
             VpnPrepareResult.AlreadyGranted -> {
                 setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_GRANTED)
+                updateHardeningStep(
+                    step = HardeningSetupStep.VPN_PERMISSION,
+                    status = HardeningSetupStatus.AUTO_CONFIRMED,
+                    evidenceType = HardeningEvidenceType.AUTOMATIC_CHECK,
+                    note = "VPN permission is already prepared.",
+                )
                 setStatus(ChildVpnSmokeLabels.STATUS_PERMISSION_GRANTED)
             }
             is VpnPrepareResult.ConsentRequired -> {
                 setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_REQUIRED)
+                updateHardeningStep(
+                    step = HardeningSetupStep.VPN_PERMISSION,
+                    status = HardeningSetupStatus.OPENED_SETTINGS,
+                    evidenceType = HardeningEvidenceType.MANUAL_DEVICE_SETTING,
+                    note = "VPN permission prompt opened for parent confirmation.",
+                )
                 setStatus(ChildVpnSmokeLabels.STATUS_PERMISSION_REQUIRED)
                 startActivityForResult(result.intent, REQUEST_VPN_PERMISSION)
             }
@@ -439,6 +576,65 @@ class ChildMainActivity : Activity() {
         startService(VordainVpnServiceIntents.stopLabCapture(this))
         setStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
+    }
+
+    private fun openSettings(action: String) {
+        val intent = Intent(action)
+        runCatching {
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+            }
+        }
+    }
+
+    private fun updateHardeningStep(
+        step: HardeningSetupStep,
+        status: HardeningSetupStatus,
+        evidenceType: HardeningEvidenceType,
+        note: String,
+    ) {
+        hardeningSetupSnapshot = hardeningSetupReducer.updateStep(
+            snapshot = currentHardeningSetupSnapshot(),
+            step = step,
+            status = status,
+            evidenceType = evidenceType,
+            note = note,
+            currentTimeMillis = System.currentTimeMillis(),
+        )
+        syncLegacySetupStateFromHardening()
+        latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(currentHardeningSetupSnapshot())
+        saveCurrentState()
+        refreshDiagnosticsViews()
+    }
+
+    private fun copyHardeningSetupReport() {
+        val snapshot = currentHardeningSetupSnapshot().copy(generatedAtMillis = System.currentTimeMillis())
+        hardeningSetupSnapshot = snapshot.copy(summaryStatus = hardeningSetupReducer.summarize(snapshot))
+        latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(currentHardeningSetupSnapshot())
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText("Vordain debug hardening setup report", latestHardeningSetupReportPayload.orEmpty()),
+        )
+        saveCurrentState()
+        refreshDiagnosticsViews()
+    }
+
+    private fun clearHardeningSetup() {
+        hardeningSetupSnapshot = hardeningSetupReducer.initialSnapshot(
+            childDeviceId = DeviceId(childDeviceId),
+            currentTimeMillis = System.currentTimeMillis(),
+        )
+        latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(currentHardeningSetupSnapshot())
+        setupForegroundNotificationStatus = SetupCheckState.UNKNOWN
+        setupAlwaysOnVpnStatus = SetupCheckState.UNKNOWN
+        setupBlockWithoutVpnStatus = SetupCheckState.UNKNOWN
+        setupBatteryOptimizationStatus = SetupCheckState.UNKNOWN
+        setupSettingsAppLockStatus = SetupCheckState.UNKNOWN
+        setupScreenPinningStatus = SetupCheckState.UNKNOWN
+        setupPrivateDnsStatus = SetupCheckState.UNKNOWN
+        setupUnknownSourcesStatus = SetupCheckState.UNKNOWN
+        saveCurrentState()
+        refreshDiagnosticsViews()
     }
 
     private fun evaluatePolicyDomain() {
@@ -621,6 +817,9 @@ class ChildMainActivity : Activity() {
         lastCommandText.text = "${ChildVpnSmokeLabels.LAST_COMMAND_PREFIX}: $lastCommand"
         shellStatusText.text = "${ChildVpnSmokeLabels.SHELL_STATUS_PREFIX}: $shellStatus"
         setupChecklistText.text = createSetupChecklistDisplay(createSetupChecklist())
+        if (::hardeningSetupText.isInitialized) {
+            hardeningSetupText.text = createHardeningSetupDisplay(currentHardeningSetupSnapshot())
+        }
         localEventsText.text = if (localDebugEvents.isEmpty()) {
             "No local debug events"
         } else {
@@ -664,6 +863,7 @@ class ChildMainActivity : Activity() {
             reviewResult = reviewResult,
             localEvents = localDebugEvents.toList(),
             labCaptureStats = LabCaptureDebugStatus.snapshot(),
+            hardeningSetupSnapshot = currentHardeningSetupSnapshot(),
         )
     }
 
@@ -691,20 +891,13 @@ class ChildMainActivity : Activity() {
     }
 
     private fun createSetupChecklist(): VpnSetupChecklist {
+        val hardening = currentHardeningSetupSnapshot()
         return VpnSetupChecklist(
-            vpnPermission = if (vpnPermissionStatus == ChildVpnSmokeLabels.PERMISSION_GRANTED) {
-                SetupCheckState.CONFIGURED
-            } else {
-                SetupCheckState.UNKNOWN
-            },
-            alwaysOnVpn = setupAlwaysOnVpnStatus,
-            blockConnectionsWithoutVpn = setupBlockWithoutVpnStatus,
-            batteryOptimizationWarning = setupBatteryOptimizationStatus,
-            appProtection = if (shellStatus == ChildVpnSmokeLabels.STATUS_SHELL_ACTIVE) {
-                SetupCheckState.USER_CONFIRMED
-            } else {
-                SetupCheckState.UNKNOWN
-            },
+            vpnPermission = hardening.itemFor(HardeningSetupStep.VPN_PERMISSION).status.toSetupCheckState(),
+            alwaysOnVpn = hardening.itemFor(HardeningSetupStep.VPN_ALWAYS_ON).status.toSetupCheckState(),
+            blockConnectionsWithoutVpn = hardening.itemFor(HardeningSetupStep.BLOCK_WITHOUT_VPN).status.toSetupCheckState(),
+            batteryOptimizationWarning = hardening.itemFor(HardeningSetupStep.BATTERY_OPTIMIZATION).status.toSetupCheckState(),
+            appProtection = hardening.itemFor(HardeningSetupStep.SETTINGS_APP_LOCK).status.toSetupCheckState(),
         )
     }
 
@@ -718,6 +911,22 @@ class ChildMainActivity : Activity() {
             "Battery optimization: ${checklist.batteryOptimizationWarning} - manual check",
             "App protection: ${checklist.appProtection}",
         ).joinToString(separator = "\n")
+    }
+
+    private fun createHardeningSetupDisplay(snapshot: HardeningSetupSnapshot): String {
+        val lines = mutableListOf(
+            "Hardening summary: ${snapshot.summaryStatus.toDisplayLabel()}",
+            snapshot.warningText,
+            "Always-on VPN: Open VPN settings, tap Vordain Guard, enable Always-on VPN.",
+            "Block without VPN: In the Vordain VPN settings, enable Block connections without VPN.",
+            "Settings/App Lock: If this device has App Lock, lock Settings and VPN settings behind the parent PIN.",
+            "Screen pinning: If App Lock is unavailable, enable PIN required to unpin.",
+        )
+        HardeningSetupStep.entries.forEach { step ->
+            val item = snapshot.itemFor(step)
+            lines += "${step.toDisplayLabel()}: ${item.status.toDisplayLabel()} / ${item.evidenceType.toDisplayLabel()} / ${item.note ?: "No note"}"
+        }
+        return lines.joinToString(separator = "\n")
     }
 
     private fun restoreState(snapshot: ChildDebugStateSnapshot) {
@@ -740,6 +949,9 @@ class ChildMainActivity : Activity() {
         latestPairingInvitePayload = snapshot.latestPairingInvitePayload
         latestPairingAcceptancePayload = snapshot.latestPairingAcceptancePayload
         acceptedParentSummary = snapshot.acceptedParentSummary
+        latestHardeningSetupReportPayload = snapshot.latestHardeningSetupReportPayload
+        hardeningSetupSnapshot = restoreHardeningSetupSnapshot(snapshot.latestHardeningSetupReportPayload)
+        syncLegacySetupStateFromHardening()
 
         val payload = snapshot.latestPolicyPayload
         if (!payload.isNullOrBlank()) {
@@ -813,12 +1025,113 @@ class ChildMainActivity : Activity() {
                 },
                 latestPairingAcceptancePayload = latestPairingAcceptancePayload,
                 acceptedParentSummary = acceptedParentSummary,
+                latestHardeningSetupReportPayload = latestHardeningSetupReportPayload,
             ),
         )
     }
 
+    private fun currentHardeningSetupSnapshot(): HardeningSetupSnapshot {
+        val current = hardeningSetupSnapshot
+        if (current != null) {
+            return current
+        }
+        return hardeningSetupReducer.initialSnapshot(
+            childDeviceId = DeviceId(childDeviceId),
+            currentTimeMillis = System.currentTimeMillis(),
+        ).also { snapshot ->
+            hardeningSetupSnapshot = snapshot
+            latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(snapshot)
+        }
+    }
+
+    private fun restoreHardeningSetupSnapshot(payload: String?): HardeningSetupSnapshot {
+        if (!payload.isNullOrBlank()) {
+            when (val result = hardeningSetupReportCodec.decode(payload)) {
+                is DebugHardeningSetupReportCodecResult.Decoded -> return result.snapshot
+                is DebugHardeningSetupReportCodecResult.Rejected -> {
+                    latestHardeningSetupReportPayload = null
+                }
+            }
+        }
+        return hardeningSetupReducer.initialSnapshot(
+            childDeviceId = DeviceId(childDeviceId),
+            currentTimeMillis = System.currentTimeMillis(),
+        )
+    }
+
+    private fun syncLegacySetupStateFromHardening() {
+        val snapshot = currentHardeningSetupSnapshot()
+        setupAlwaysOnVpnStatus = snapshot.itemFor(HardeningSetupStep.VPN_ALWAYS_ON).status.toSetupCheckState()
+        setupBlockWithoutVpnStatus = snapshot.itemFor(HardeningSetupStep.BLOCK_WITHOUT_VPN).status.toSetupCheckState()
+        setupBatteryOptimizationStatus = snapshot.itemFor(HardeningSetupStep.BATTERY_OPTIMIZATION).status.toSetupCheckState()
+        setupSettingsAppLockStatus = snapshot.itemFor(HardeningSetupStep.SETTINGS_APP_LOCK).status.toSetupCheckState()
+        setupScreenPinningStatus = snapshot.itemFor(HardeningSetupStep.SCREEN_PINNING_WITH_PIN).status.toSetupCheckState()
+        setupPrivateDnsStatus = snapshot.itemFor(HardeningSetupStep.PRIVATE_DNS_REVIEW).status.toSetupCheckState()
+        setupUnknownSourcesStatus = snapshot.itemFor(HardeningSetupStep.UNKNOWN_SOURCES_REVIEW).status.toSetupCheckState()
+    }
+
     private fun String.toSetupCheckState(): SetupCheckState {
         return runCatching { SetupCheckState.valueOf(this) }.getOrDefault(SetupCheckState.UNKNOWN)
+    }
+
+    private fun HardeningSetupStatus.toSetupCheckState(): SetupCheckState {
+        return when (this) {
+            HardeningSetupStatus.AUTO_CONFIRMED -> SetupCheckState.CONFIGURED
+            HardeningSetupStatus.USER_CONFIRMED -> SetupCheckState.USER_CONFIRMED
+            HardeningSetupStatus.NEEDS_ATTENTION -> SetupCheckState.NOT_CONFIGURED
+            HardeningSetupStatus.NOT_STARTED,
+            HardeningSetupStatus.OPENED_SETTINGS,
+            HardeningSetupStatus.NOT_SUPPORTED,
+            HardeningSetupStatus.UNKNOWN,
+            -> SetupCheckState.UNKNOWN
+        }
+    }
+
+    private fun HardeningSummaryStatus.toDisplayLabel(): String {
+        return when (this) {
+            com.vordain.guard.features.setupchecklist.HardeningSummaryStatus.NOT_STARTED -> "Unknown"
+            com.vordain.guard.features.setupchecklist.HardeningSummaryStatus.IN_PROGRESS -> "Needs attention"
+            com.vordain.guard.features.setupchecklist.HardeningSummaryStatus.READY_FOR_LAB_TEST -> "Ready for lab test"
+            com.vordain.guard.features.setupchecklist.HardeningSummaryStatus.NEEDS_ATTENTION -> "Needs attention"
+            com.vordain.guard.features.setupchecklist.HardeningSummaryStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun HardeningSetupStatus.toDisplayLabel(): String {
+        return when (this) {
+            HardeningSetupStatus.AUTO_CONFIRMED -> "Confirmed"
+            HardeningSetupStatus.USER_CONFIRMED -> "Parent confirmed"
+            HardeningSetupStatus.NEEDS_ATTENTION -> "Needs attention"
+            HardeningSetupStatus.NOT_SUPPORTED -> "Not supported"
+            HardeningSetupStatus.OPENED_SETTINGS -> "Needs attention"
+            HardeningSetupStatus.NOT_STARTED,
+            HardeningSetupStatus.UNKNOWN,
+            -> "Unknown"
+        }
+    }
+
+    private fun HardeningEvidenceType.toDisplayLabel(): String {
+        return when (this) {
+            HardeningEvidenceType.AUTOMATIC_CHECK -> "automatic"
+            HardeningEvidenceType.PARENT_CONFIRMATION -> "parent confirmed"
+            HardeningEvidenceType.MANUAL_DEVICE_SETTING -> "manual instruction"
+            HardeningEvidenceType.BEHAVIOR_TEST -> "behavior test"
+            HardeningEvidenceType.UNKNOWN -> "unknown"
+        }
+    }
+
+    private fun HardeningSetupStep.toDisplayLabel(): String {
+        return when (this) {
+            HardeningSetupStep.VPN_PERMISSION -> "VPN permission"
+            HardeningSetupStep.VPN_ALWAYS_ON -> "Always-on VPN"
+            HardeningSetupStep.BLOCK_WITHOUT_VPN -> "Block connections without VPN"
+            HardeningSetupStep.SETTINGS_APP_LOCK -> "Settings/App Lock"
+            HardeningSetupStep.SCREEN_PINNING_WITH_PIN -> "Screen pinning with PIN"
+            HardeningSetupStep.BATTERY_OPTIMIZATION -> "Battery optimization"
+            HardeningSetupStep.PRIVATE_DNS_REVIEW -> "Private DNS"
+            HardeningSetupStep.UNKNOWN_SOURCES_REVIEW -> "Unknown sources"
+            HardeningSetupStep.FINAL_PARENT_REVIEW -> "Final parent review"
+        }
     }
 
     private fun Set<DomainName>.toCsv(): String {

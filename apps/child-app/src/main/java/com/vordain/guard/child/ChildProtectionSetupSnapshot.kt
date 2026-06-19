@@ -8,7 +8,7 @@ data class ChildProtectionSetupSnapshot(
 ) {
     init {
         require(protectionState != ProtectionState.PROTECTED || checklist.isComplete) {
-            "Protected state requires a complete local setup checklist"
+            "Confirmed setup state requires a complete local setup checklist"
         }
     }
 }

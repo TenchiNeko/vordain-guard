@@ -22,6 +22,7 @@ data class ChildDebugStateSnapshot(
     val latestPairingInvitePayload: String? = null,
     val latestPairingAcceptancePayload: String? = null,
     val acceptedParentSummary: String? = null,
+    val latestHardeningSetupReportPayload: String? = null,
 ) {
     companion object {
         const val DEFAULT_CHILD_DEVICE_ID = "child-debug-device"

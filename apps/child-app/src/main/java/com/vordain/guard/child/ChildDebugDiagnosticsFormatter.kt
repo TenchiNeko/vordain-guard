@@ -8,6 +8,10 @@ class ChildDebugDiagnosticsFormatter {
         val lines = mutableListOf<String>()
         lines += diagnostics.asClipboardText()
         lines += "Setup checklist:"
+        lines += "Hardening summary: ${state.hardeningSetupSnapshot.summaryStatus}"
+        state.hardeningSetupSnapshot.items.forEach { item ->
+            lines += "${item.step}: ${item.status} / ${item.evidenceType} / ${item.note ?: "no note"}"
+        }
         lines += "VPN permission: ${state.setupChecklist.vpnPermission}"
         lines += "Start shell: ${state.shellStatus}"
         lines += "Always-on VPN: ${state.setupChecklist.alwaysOnVpn}"

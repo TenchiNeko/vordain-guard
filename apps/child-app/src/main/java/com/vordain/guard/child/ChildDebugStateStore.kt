@@ -40,6 +40,7 @@ class ChildDebugStateStore(context: Context) {
             latestPairingInvitePayload = preferences.getString(KEY_LATEST_PAIRING_INVITE_PAYLOAD, null),
             latestPairingAcceptancePayload = preferences.getString(KEY_LATEST_PAIRING_ACCEPTANCE_PAYLOAD, null),
             acceptedParentSummary = preferences.getString(KEY_ACCEPTED_PARENT_SUMMARY, null),
+            latestHardeningSetupReportPayload = preferences.getString(KEY_LATEST_HARDENING_SETUP_REPORT_PAYLOAD, null),
         )
     }
 
@@ -66,6 +67,7 @@ class ChildDebugStateStore(context: Context) {
             .putString(KEY_LATEST_PAIRING_INVITE_PAYLOAD, snapshot.latestPairingInvitePayload)
             .putString(KEY_LATEST_PAIRING_ACCEPTANCE_PAYLOAD, snapshot.latestPairingAcceptancePayload)
             .putString(KEY_ACCEPTED_PARENT_SUMMARY, snapshot.acceptedParentSummary)
+            .putString(KEY_LATEST_HARDENING_SETUP_REPORT_PAYLOAD, snapshot.latestHardeningSetupReportPayload)
             .apply()
     }
 
@@ -92,6 +94,7 @@ class ChildDebugStateStore(context: Context) {
         const val KEY_LATEST_PAIRING_INVITE_PAYLOAD = "latest_pairing_invite_payload"
         const val KEY_LATEST_PAIRING_ACCEPTANCE_PAYLOAD = "latest_pairing_acceptance_payload"
         const val KEY_ACCEPTED_PARENT_SUMMARY = "accepted_parent_summary"
+        const val KEY_LATEST_HARDENING_SETUP_REPORT_PAYLOAD = "latest_hardening_setup_report_payload"
 
         val persistedKeys = setOf(
             KEY_CHILD_DEVICE_ID,
@@ -115,6 +118,7 @@ class ChildDebugStateStore(context: Context) {
             KEY_LATEST_PAIRING_INVITE_PAYLOAD,
             KEY_LATEST_PAIRING_ACCEPTANCE_PAYLOAD,
             KEY_ACCEPTED_PARENT_SUMMARY,
+            KEY_LATEST_HARDENING_SETUP_REPORT_PAYLOAD,
         )
     }
 }

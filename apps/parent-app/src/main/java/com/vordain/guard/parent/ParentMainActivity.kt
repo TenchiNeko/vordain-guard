@@ -35,12 +35,20 @@ import com.vordain.guard.core.policysync.DebugPolicyUpdateCodec
 import com.vordain.guard.core.policysync.PolicyUpdateSignature
 import com.vordain.guard.core.policysync.PolicyVersion
 import com.vordain.guard.core.policysync.SignedPolicyUpdate
+import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodec
+import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodecResult
+import com.vordain.guard.features.setupchecklist.HardeningEvidenceType
+import com.vordain.guard.features.setupchecklist.HardeningSetupSnapshot
+import com.vordain.guard.features.setupchecklist.HardeningSetupStatus
+import com.vordain.guard.features.setupchecklist.HardeningSetupStep
+import com.vordain.guard.features.setupchecklist.HardeningSummaryStatus
 
 class ParentMainActivity : Activity() {
     private val codec = DebugPolicyUpdateCodec()
     private val inviteCodec = DebugPairingInviteCodec()
     private val acceptanceCodec = DebugPairingAcceptanceCodec()
     private val pairingEvaluator = PairingEvaluator()
+    private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
     private lateinit var stateStore: ParentDebugStateStore
     private lateinit var targetDeviceInput: EditText
     private lateinit var policyVersionInput: EditText
@@ -56,10 +64,14 @@ class ParentMainActivity : Activity() {
     private lateinit var verificationCodeInput: EditText
     private lateinit var childAcceptanceInput: EditText
     private lateinit var pairingOutput: TextView
+    private lateinit var setupReportInput: EditText
+    private lateinit var setupReportOutput: TextView
     private var lastPayload: String = ""
     private var lastPairingInvitePayload: String = ""
     private var lastPairingAcceptancePayload: String = ""
     private var acceptedChildSummary: String? = null
+    private var lastHardeningSetupReportPayload: String = ""
+    private var decodedHardeningSetupReport: HardeningSetupSnapshot? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,12 +99,14 @@ class ParentMainActivity : Activity() {
         lastPairingInvitePayload = snapshot.latestPairingInvitePayload.orEmpty()
         lastPairingAcceptancePayload = snapshot.latestPairingAcceptancePayload.orEmpty()
         acceptedChildSummary = snapshot.acceptedChildSummary
+        lastHardeningSetupReportPayload = snapshot.latestHardeningSetupReportPayload.orEmpty()
         pairingSessionInput = editText(snapshot.pairingSessionId)
         parentDeviceInput = editText(snapshot.parentDeviceId)
         parentDisplayNameInput = editText(snapshot.parentDisplayName)
         parentFingerprintInput = editText(snapshot.parentFingerprint)
         verificationCodeInput = editText(snapshot.verificationCode)
         childAcceptanceInput = editText(lastPairingAcceptancePayload)
+        setupReportInput = editText(lastHardeningSetupReportPayload)
         targetDeviceInput = editText(snapshot.targetChildDeviceId)
         policyVersionInput = editText(snapshot.policyVersion)
         allowDomainsInput = editText(snapshot.allowDomainsText)
@@ -140,6 +154,15 @@ class ParentMainActivity : Activity() {
         payloadOutput = valueLabel(lastPayload.ifBlank { "No debug policy update built yet" }, 14f)
         layout.addView(payloadOutput)
         layout.addView(valueLabel("Production policy sync will use signed encrypted delivery later.", 14f))
+
+        layout.addView(sectionTitle("Child hardening setup"))
+        layout.addView(valueLabel("This debug report is parent/child copy-paste only. Production will use encrypted delivery later.", 14f))
+        layout.addView(labeledField("Paste setup report", setupReportInput))
+        layout.addView(button("Decode setup report") {
+            decodeHardeningSetupReport()
+        })
+        setupReportOutput = valueLabel(createHardeningSetupOutput(), 14f)
+        layout.addView(setupReportOutput)
 
         return ScrollView(this).apply { addView(layout) }
     }
@@ -282,7 +305,50 @@ class ParentMainActivity : Activity() {
             latestPairingInvitePayload = lastPairingInvitePayload.takeIf(String::isNotBlank),
             latestPairingAcceptancePayload = lastPairingAcceptancePayload.takeIf(String::isNotBlank),
             acceptedChildSummary = acceptedChildSummary,
+            latestHardeningSetupReportPayload = lastHardeningSetupReportPayload.takeIf(String::isNotBlank),
         )
+    }
+
+    private fun decodeHardeningSetupReport() {
+        lastHardeningSetupReportPayload = setupReportInput.text.toString()
+        setupReportOutput.text = when (val result = hardeningSetupReportCodec.decode(lastHardeningSetupReportPayload)) {
+            is DebugHardeningSetupReportCodecResult.Decoded -> {
+                decodedHardeningSetupReport = result.snapshot
+                createHardeningSetupOutput()
+            }
+            is DebugHardeningSetupReportCodecResult.Rejected -> {
+                decodedHardeningSetupReport = null
+                "Setup report rejected: ${result.reason}"
+            }
+        }
+        stateStore.save(createSnapshot())
+    }
+
+    private fun createHardeningSetupOutput(): String {
+        val snapshot = decodedHardeningSetupReport
+            ?: hardeningSetupReportCodec.decode(lastHardeningSetupReportPayload)
+                .let { result -> (result as? DebugHardeningSetupReportCodecResult.Decoded)?.snapshot }
+            ?: return "No child setup report decoded yet"
+        decodedHardeningSetupReport = snapshot
+        val lines = mutableListOf(
+            "Summary status: ${snapshot.summaryStatus.toDisplayLabel()}",
+            "Child device id: ${snapshot.childDeviceId.value}",
+            "Generated at: ${snapshot.generatedAtMillis}",
+        )
+        listOf(
+            HardeningSetupStep.VPN_PERMISSION,
+            HardeningSetupStep.VPN_ALWAYS_ON,
+            HardeningSetupStep.BLOCK_WITHOUT_VPN,
+            HardeningSetupStep.SETTINGS_APP_LOCK,
+            HardeningSetupStep.SCREEN_PINNING_WITH_PIN,
+            HardeningSetupStep.BATTERY_OPTIMIZATION,
+            HardeningSetupStep.PRIVATE_DNS_REVIEW,
+            HardeningSetupStep.UNKNOWN_SOURCES_REVIEW,
+        ).forEach { step ->
+            val item = snapshot.itemFor(step)
+            lines += "${step.toDisplayLabel()}: ${item.status.toDisplayLabel()} / ${item.evidenceType.toDisplayLabel()} / ${item.note ?: "No note"}"
+        }
+        return lines.joinToString(separator = "\n")
     }
 
     private fun createPairingOutput(): String {
@@ -357,6 +423,53 @@ class ParentMainActivity : Activity() {
         return Button(this).apply {
             this.text = text
             setOnClickListener { onClick() }
+        }
+    }
+
+    private fun HardeningSummaryStatus.toDisplayLabel(): String {
+        return when (this) {
+            HardeningSummaryStatus.NOT_STARTED -> "Unknown"
+            HardeningSummaryStatus.IN_PROGRESS -> "Needs attention"
+            HardeningSummaryStatus.READY_FOR_LAB_TEST -> "Ready for lab test"
+            HardeningSummaryStatus.NEEDS_ATTENTION -> "Needs attention"
+            HardeningSummaryStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun HardeningSetupStatus.toDisplayLabel(): String {
+        return when (this) {
+            HardeningSetupStatus.AUTO_CONFIRMED -> "Confirmed"
+            HardeningSetupStatus.USER_CONFIRMED -> "Parent confirmed"
+            HardeningSetupStatus.NEEDS_ATTENTION -> "Needs attention"
+            HardeningSetupStatus.NOT_SUPPORTED -> "Not supported"
+            HardeningSetupStatus.OPENED_SETTINGS -> "Needs attention"
+            HardeningSetupStatus.NOT_STARTED,
+            HardeningSetupStatus.UNKNOWN,
+            -> "Unknown"
+        }
+    }
+
+    private fun HardeningEvidenceType.toDisplayLabel(): String {
+        return when (this) {
+            HardeningEvidenceType.AUTOMATIC_CHECK -> "automatic"
+            HardeningEvidenceType.PARENT_CONFIRMATION -> "parent confirmed"
+            HardeningEvidenceType.MANUAL_DEVICE_SETTING -> "manual instruction"
+            HardeningEvidenceType.BEHAVIOR_TEST -> "behavior test"
+            HardeningEvidenceType.UNKNOWN -> "unknown"
+        }
+    }
+
+    private fun HardeningSetupStep.toDisplayLabel(): String {
+        return when (this) {
+            HardeningSetupStep.VPN_PERMISSION -> "VPN permission"
+            HardeningSetupStep.VPN_ALWAYS_ON -> "Always-on VPN"
+            HardeningSetupStep.BLOCK_WITHOUT_VPN -> "Block connections without VPN"
+            HardeningSetupStep.SETTINGS_APP_LOCK -> "Settings/App Lock"
+            HardeningSetupStep.SCREEN_PINNING_WITH_PIN -> "Screen pinning with PIN"
+            HardeningSetupStep.BATTERY_OPTIMIZATION -> "Battery optimization"
+            HardeningSetupStep.PRIVATE_DNS_REVIEW -> "Private DNS"
+            HardeningSetupStep.UNKNOWN_SOURCES_REVIEW -> "Unknown sources"
+            HardeningSetupStep.FINAL_PARENT_REVIEW -> "Final parent review"
         }
     }
 
