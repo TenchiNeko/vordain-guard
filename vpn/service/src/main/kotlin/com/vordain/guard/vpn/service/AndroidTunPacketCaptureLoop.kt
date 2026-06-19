@@ -1,13 +1,14 @@
 package com.vordain.guard.vpn.service
 
 import android.os.ParcelFileDescriptor
+import com.vordain.guard.vpn.lab.LabTrafficObserver
 import java.io.FileInputStream
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AndroidTunPacketCaptureLoop(
     private val descriptor: ParcelFileDescriptor,
-    private val sink: LabPacketCaptureSink,
+    private val observer: LabTrafficObserver,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     private val running = AtomicBoolean(false)
@@ -17,7 +18,7 @@ class AndroidTunPacketCaptureLoop(
         if (!running.compareAndSet(false, true)) {
             return
         }
-        sink.onCaptureStarted(clock())
+        observer.reset(clock())
         thread = Thread(::capturePackets, "VordainLabTunCapture").apply {
             isDaemon = true
             start()
@@ -30,7 +31,7 @@ class AndroidTunPacketCaptureLoop(
         }
         thread?.interrupt()
         thread = null
-        sink.onCaptureStopped(clock())
+        observer.markStopped(clock())
     }
 
     private fun capturePackets() {
@@ -42,21 +43,14 @@ class AndroidTunPacketCaptureLoop(
                     if (bytesRead < 0) {
                         break
                     }
-                    val metadata = TunPacketMetadataParser.parse(buffer, bytesRead)
-                    if (metadata == null) {
-                        sink.onMalformedPacket(bytesRead)
-                    } else {
-                        sink.onPacket(metadata)
-                    }
+                    observer.observePacket(buffer, bytesRead, clock())
                 }
             }
         } catch (_: IOException) {
-            if (running.get()) {
-                sink.onMalformedPacket(0)
-            }
+            if (running.get()) observer.observePacket(ByteArray(0), 0, clock())
         } finally {
             running.set(false)
-            sink.onCaptureStopped(clock())
+            observer.markStopped(clock())
         }
     }
 

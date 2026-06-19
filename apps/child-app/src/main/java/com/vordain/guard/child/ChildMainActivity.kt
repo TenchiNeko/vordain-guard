@@ -32,8 +32,8 @@ import com.vordain.guard.core.policysync.PersistedSignedPolicySnapshot
 import com.vordain.guard.core.policysync.PolicyVersion
 import com.vordain.guard.core.policysync.SignedPolicySnapshotRestorer
 import com.vordain.guard.data.review.ReviewRequestReason
-import com.vordain.guard.vpn.service.LabPacketCaptureDebugStatus
-import com.vordain.guard.vpn.service.TunPacketCaptureStats
+import com.vordain.guard.vpn.lab.LabTrafficObservationStats
+import com.vordain.guard.vpn.service.LabCaptureDebugStatus
 import com.vordain.guard.vpn.service.VordainVpnServiceIntents
 import com.vordain.guard.vpn.service.VpnPermissionIntentFactory
 import com.vordain.guard.vpn.service.VpnPrepareResult
@@ -165,6 +165,7 @@ class ChildMainActivity : Activity() {
         layout.addView(sectionTitle("Lab full-tunnel capture"))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_WARNING, textSize = 14f))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_LOCAL_ONLY, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_DNS_LOCAL_ONLY, textSize = 14f))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION, textSize = 14f))
         layout.addView(button("Start lab capture") {
             startLabCaptureWhenAllowed()
@@ -175,7 +176,7 @@ class ChildMainActivity : Activity() {
         layout.addView(button("Refresh lab stats") {
             refreshDiagnosticsViews()
         })
-        labCaptureText = valueLabel(createLabCaptureDisplay(LabPacketCaptureDebugStatus.snapshot()), textSize = 14f)
+        labCaptureText = valueLabel(createLabCaptureDisplay(LabCaptureDebugStatus.snapshot()), textSize = 14f)
         layout.addView(labCaptureText)
 
         layout.addView(sectionTitle("Setup checklist"))
@@ -632,7 +633,7 @@ class ChildMainActivity : Activity() {
             )
         }
         if (::labCaptureText.isInitialized) {
-            labCaptureText.text = createLabCaptureDisplay(LabPacketCaptureDebugStatus.snapshot())
+            labCaptureText.text = createLabCaptureDisplay(LabCaptureDebugStatus.snapshot())
         }
     }
 
@@ -662,22 +663,31 @@ class ChildMainActivity : Activity() {
             compatibilityResult = compatibilityResult,
             reviewResult = reviewResult,
             localEvents = localDebugEvents.toList(),
-            labCaptureStats = LabPacketCaptureDebugStatus.snapshot(),
+            labCaptureStats = LabCaptureDebugStatus.snapshot(),
         )
     }
 
-    private fun createLabCaptureDisplay(stats: TunPacketCaptureStats): String {
-        return listOf(
+    private fun createLabCaptureDisplay(stats: LabTrafficObservationStats): String {
+        val lines = mutableListOf(
             "Lab mode status: $shellStatus",
             "Packet count: ${stats.packetCount}",
             "Byte count: ${stats.byteCount}",
-            "IPv4/IPv6: ${stats.ipv4Count}/${stats.ipv6Count}",
-            "TCP/UDP/ICMP: ${stats.tcpCount}/${stats.udpCount}/${stats.icmpCount}",
-            "Malformed: ${stats.malformedCount}",
-            "Last packet: ${stats.lastPacketSummary ?: "none"}",
+            "DNS packet count: ${stats.dnsPacketCount}",
+            "DNS query count: ${stats.dnsQueryCount}",
+            "Allowed/block/alert counts: ${stats.allowedDomainCount}/${stats.blockedDomainCount}/${stats.alertOnlyDomainCount}",
+            "Malformed packet/DNS counts: ${stats.malformedPacketCount}/${stats.malformedDnsCount}",
+            "Last packet summary: ${stats.lastPacketSummary ?: "none"}",
             ChildVpnSmokeLabels.LAB_LOCAL_ONLY,
+            ChildVpnSmokeLabels.LAB_DNS_LOCAL_ONLY,
             ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION,
-        ).joinToString(separator = "\n")
+        )
+        if (stats.recentDnsObservations.isNotEmpty()) {
+            lines += "Recent DNS observations:"
+            stats.recentDnsObservations.forEach { observation ->
+                lines += observation.summary()
+            }
+        }
+        return lines.joinToString(separator = "\n")
     }
 
     private fun createSetupChecklist(): VpnSetupChecklist {

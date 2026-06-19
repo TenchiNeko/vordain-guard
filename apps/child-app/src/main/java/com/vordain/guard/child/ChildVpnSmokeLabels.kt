@@ -34,6 +34,7 @@ object ChildVpnSmokeLabels {
     const val WARNING = "This build does not filter traffic yet."
     const val LAB_WARNING = "This mode routes tablet traffic into Vordain and drops it. Internet may stop until you press Stop."
     const val LAB_LOCAL_ONLY = "Local test only. No traffic leaves the device from this capture. No forwarding yet."
+    const val LAB_DNS_LOCAL_ONLY = "DNS observations are local and in-memory only."
     const val LAB_NOT_FULL_PROTECTION = "Not full protection - no forwarding yet."
     const val DIAGNOSTICS_COPIED = "Diagnostics copied"
 }

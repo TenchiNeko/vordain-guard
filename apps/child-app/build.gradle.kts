@@ -37,5 +37,7 @@ dependencies {
     implementation(project(":data:relay"))
     implementation(project(":vpn:classifier"))
     implementation(project(":vpn:engine"))
+    implementation(project(":vpn:packet"))
+    implementation(project(":vpn:lab"))
     implementation(project(":vpn:service"))
 }

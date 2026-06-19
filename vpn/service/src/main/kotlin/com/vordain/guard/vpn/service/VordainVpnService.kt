@@ -83,7 +83,7 @@ class VordainVpnService : VpnService() {
                 if (capturePackets) {
                     captureLoop = AndroidTunPacketCaptureLoop(
                         descriptor = result.handle.descriptor,
-                        sink = LabPacketCaptureDebugStatus.sink(),
+                        observer = LabCaptureDebugStatus.observer(),
                     ).also(AndroidTunPacketCaptureLoop::start)
                 }
                 sessionSink.onVpnStarted()

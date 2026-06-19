@@ -1,6 +1,6 @@
 package com.vordain.guard.child
 
-import com.vordain.guard.vpn.service.TunPacketCaptureStats
+import com.vordain.guard.vpn.lab.LabTrafficObservationStats
 
 data class ChildDebugDashboardState(
     val vpnPermissionStatus: String,
@@ -13,5 +13,5 @@ data class ChildDebugDashboardState(
     val compatibilityResult: ChildDebugCompatibilityResult?,
     val reviewResult: ChildDebugReviewResult?,
     val localEvents: List<String>,
-    val labCaptureStats: TunPacketCaptureStats,
+    val labCaptureStats: LabTrafficObservationStats,
 )
