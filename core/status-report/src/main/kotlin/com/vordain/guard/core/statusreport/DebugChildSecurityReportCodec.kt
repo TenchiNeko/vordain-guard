@@ -19,6 +19,10 @@ class DebugChildSecurityReportCodec {
             "heartbeatLabel=${report.heartbeatLabel.orEmpty()}",
             "setupSummaryLabel=${report.setupSummaryLabel.orEmpty()}",
             "bypassRiskLabel=${report.bypassRiskLabel.orEmpty()}",
+            "activeMode=${report.activeMode.name}",
+            "dnsBlockedResponseCount=${report.dnsBlockedResponseCount}",
+            "dnsAllowedForwardedCount=${report.dnsAllowedForwardedCount}",
+            "dnsAllowedForwardFailureCount=${report.dnsAllowedForwardFailureCount}",
             "signals=${report.signals.map(ChildSecuritySignal::name).sorted().joinToString(separator = ",")}",
             "warning=${report.warningText}",
         ).joinToString(separator = "\n")
@@ -60,6 +64,9 @@ class DebugChildSecurityReportCodec {
                     ?: return DebugChildSecurityReportCodecResult.Rejected("Unknown signal")
             }
             .toSet()
+        val activeMode = values["activeMode"]?.let { encodedMode ->
+            enumValueOrNull<ChildSecurityActiveMode>(encodedMode)
+        } ?: ChildSecurityActiveMode.NONE
         return DebugChildSecurityReportCodecResult.Decoded(
             ChildSecurityStatusReport(
                 childDeviceId = DeviceId(childDeviceId),
@@ -71,6 +78,10 @@ class DebugChildSecurityReportCodec {
                 heartbeatLabel = values["heartbeatLabel"]?.takeIf(String::isNotBlank),
                 setupSummaryLabel = values["setupSummaryLabel"]?.takeIf(String::isNotBlank),
                 bypassRiskLabel = values["bypassRiskLabel"]?.takeIf(String::isNotBlank),
+                activeMode = activeMode,
+                dnsBlockedResponseCount = values["dnsBlockedResponseCount"]?.toLongOrNull() ?: 0,
+                dnsAllowedForwardedCount = values["dnsAllowedForwardedCount"]?.toLongOrNull() ?: 0,
+                dnsAllowedForwardFailureCount = values["dnsAllowedForwardFailureCount"]?.toLongOrNull() ?: 0,
                 warningText = values["warning"]?.takeIf(String::isNotBlank)
                     ?: ChildSecurityStatusReport.WARNING_TEXT,
             ),

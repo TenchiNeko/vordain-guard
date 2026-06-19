@@ -70,7 +70,16 @@ class ChildSecurityStatusEvaluatorTest {
 
     @Test
     fun codecRoundTripsReport() {
-        val report = evaluator.evaluate(baseInput(policyApplied = true, policyVersion = "debug-4"))
+        val report = evaluator.evaluate(
+            baseInput(
+                policyApplied = true,
+                policyVersion = "debug-4",
+                activeMode = ChildSecurityActiveMode.DNS_ONLY_LAB,
+                dnsBlockedResponseCount = 2,
+                dnsAllowedForwardedCount = 3,
+                dnsAllowedForwardFailureCount = 1,
+            ),
+        )
 
         val decoded = codec.decode(codec.encode(report))
 
@@ -79,6 +88,30 @@ class ChildSecurityStatusEvaluatorTest {
         assertEquals(report.overallStatus, decoded.report.overallStatus)
         assertEquals(report.policyVersion, decoded.report.policyVersion)
         assertEquals(report.signals, decoded.report.signals)
+        assertEquals(ChildSecurityActiveMode.DNS_ONLY_LAB, decoded.report.activeMode)
+        assertEquals(2, decoded.report.dnsBlockedResponseCount)
+        assertEquals(3, decoded.report.dnsAllowedForwardedCount)
+        assertEquals(1, decoded.report.dnsAllowedForwardFailureCount)
+    }
+
+    @Test
+    fun statusReportCanEncodeDecodeDnsOnlyMode() {
+        val report = evaluator.evaluate(
+            baseInput(
+                activeMode = ChildSecurityActiveMode.DNS_ONLY_LAB,
+                dnsBlockedResponseCount = 4,
+                dnsAllowedForwardedCount = 5,
+                dnsAllowedForwardFailureCount = 6,
+            ),
+        )
+
+        val decoded = codec.decode(codec.encode(report))
+
+        assertIs<DebugChildSecurityReportCodecResult.Decoded>(decoded)
+        assertEquals(ChildSecurityActiveMode.DNS_ONLY_LAB, decoded.report.activeMode)
+        assertEquals(4, decoded.report.dnsBlockedResponseCount)
+        assertEquals(5, decoded.report.dnsAllowedForwardedCount)
+        assertEquals(6, decoded.report.dnsAllowedForwardFailureCount)
     }
 
     @Test
@@ -154,6 +187,10 @@ class ChildSecurityStatusEvaluatorTest {
         policyVersion: String? = null,
         vpnStopped: Boolean = false,
         pinCompromiseSuspected: Boolean = false,
+        activeMode: ChildSecurityActiveMode = ChildSecurityActiveMode.NONE,
+        dnsBlockedResponseCount: Long = 0,
+        dnsAllowedForwardedCount: Long = 0,
+        dnsAllowedForwardFailureCount: Long = 0,
     ): ChildSecurityStatusInput {
         return ChildSecurityStatusInput(
             childDeviceId = DeviceId("child-debug-device"),
@@ -176,6 +213,10 @@ class ChildSecurityStatusEvaluatorTest {
             bypassRiskLabel = "No current signal",
             labCaptureActive = false,
             pinCompromiseSuspected = pinCompromiseSuspected,
+            activeMode = activeMode,
+            dnsBlockedResponseCount = dnsBlockedResponseCount,
+            dnsAllowedForwardedCount = dnsAllowedForwardedCount,
+            dnsAllowedForwardFailureCount = dnsAllowedForwardFailureCount,
         )
     }
 

@@ -38,7 +38,9 @@ class InMemoryLabTrafficObserver(
     private var upstreamTransport: LabDnsUpstreamTransport = initialUpstreamTransport
     private var upstreamHost: String = initialUpstreamHost
     private var upstreamPort: Int = initialUpstreamPort
+    private var captureMode: LabCaptureMode = LabCaptureMode.FULL_TUNNEL_LAB
     private var stats = LabTrafficObservationStats(
+        activeModeLabel = captureMode.displayLabel,
         dnsUpstreamHost = upstreamHost,
         dnsUpstreamPort = upstreamPort,
     )
@@ -46,6 +48,7 @@ class InMemoryLabTrafficObserver(
     override fun reset(startedAtMillis: Long) {
         synchronized(lock) {
             stats = LabTrafficObservationStats(
+                activeModeLabel = captureMode.displayLabel,
                 dnsUpstreamHost = upstreamHost,
                 dnsUpstreamPort = upstreamPort,
                 lastPacketSummary = "Lab capture started at $startedAtMillis",
@@ -135,16 +138,19 @@ class InMemoryLabTrafficObserver(
         upstreamTransport: LabDnsUpstreamTransport,
         upstreamHost: String = DEFAULT_UPSTREAM_HOST,
         upstreamPort: Int = DNS_PORT,
+        captureMode: LabCaptureMode = this.captureMode,
     ) {
         synchronized(lock) {
             this.forwardingMode = forwardingMode
             this.upstreamTransport = upstreamTransport
             this.upstreamHost = upstreamHost
             this.upstreamPort = upstreamPort
+            this.captureMode = captureMode
             stats = stats.copy(
+                activeModeLabel = captureMode.displayLabel,
                 dnsUpstreamHost = upstreamHost,
                 dnsUpstreamPort = upstreamPort,
-                lastPacketSummary = "Lab DNS upstream set to $upstreamHost:$upstreamPort",
+                lastPacketSummary = "${captureMode.displayLabel} DNS upstream set to $upstreamHost:$upstreamPort",
             )
         }
     }
@@ -156,11 +162,11 @@ class InMemoryLabTrafficObserver(
         originalLength: Int,
         observedAtMillis: Long,
     ): LabPacketHandlingResult {
-        val udpPayload = parseResult.udpPayload ?: return drop(currentStats, parseResult.metadata.summary())
+        val udpPayload = parseResult.udpPayload ?: return dropNonDns(currentStats, parseResult.metadata.summary())
         val sourcePort = parseResult.metadata.sourcePort
         val destinationPort = parseResult.metadata.destinationPort
         if (sourcePort != DNS_PORT && destinationPort != DNS_PORT) {
-            return drop(currentStats, "Non-DNS packet dropped")
+            return dropNonDns(currentStats, "Non-DNS packet dropped")
         }
 
         return when (val dnsResult = dnsParser.parse(udpPayload.payload)) {
@@ -210,6 +216,8 @@ class InMemoryLabTrafficObserver(
                     )
                     stats = observedStats.copy(
                         dnsBlockedResponseCount = observedStats.dnsBlockedResponseCount + if (response.built) 1 else 0,
+                        dnsOnlyBlockedResponseCount = observedStats.dnsOnlyBlockedResponseCount +
+                            if (response.built && captureMode == LabCaptureMode.DNS_ONLY_LAB) 1 else 0,
                         lastPacketSummary = "${observation.summary()}\n${response.reason}",
                     )
                     if (response.built) {
@@ -265,6 +273,8 @@ class InMemoryLabTrafficObserver(
         if (!upstreamResult.success || upstreamResult.responsePayload == null) {
             stats = observedStats.copy(
                 dnsAllowedForwardFailureCount = observedStats.dnsAllowedForwardFailureCount + allowedCount,
+                dnsOnlyAllowedForwardFailureCount = observedStats.dnsOnlyAllowedForwardFailureCount +
+                    if (captureMode == LabCaptureMode.DNS_ONLY_LAB) allowedCount else 0,
                 dnsAllowedForwardTimeoutCount = observedStats.dnsAllowedForwardTimeoutCount +
                     if (upstreamResult.reason.contains("timeout", ignoreCase = true)) allowedCount else 0,
                 dnsAlertDroppedCount = observedStats.dnsAlertDroppedCount + alertOnlyCount,
@@ -281,6 +291,8 @@ class InMemoryLabTrafficObserver(
         if (!response.built || response.responseBytes == null) {
             stats = observedStats.copy(
                 dnsAllowedForwardFailureCount = observedStats.dnsAllowedForwardFailureCount + allowedCount,
+                dnsOnlyAllowedForwardFailureCount = observedStats.dnsOnlyAllowedForwardFailureCount +
+                    if (captureMode == LabCaptureMode.DNS_ONLY_LAB) allowedCount else 0,
                 dnsAlertDroppedCount = observedStats.dnsAlertDroppedCount + alertOnlyCount,
                 lastPacketSummary = "Allowed DNS upstream response could not be wrapped: ${response.reason}",
             )
@@ -289,6 +301,8 @@ class InMemoryLabTrafficObserver(
 
         stats = observedStats.copy(
             dnsAllowedForwardedCount = observedStats.dnsAllowedForwardedCount + allowedCount,
+            dnsOnlyAllowedForwardedCount = observedStats.dnsOnlyAllowedForwardedCount +
+                if (captureMode == LabCaptureMode.DNS_ONLY_LAB) allowedCount else 0,
             dnsAlertDroppedCount = observedStats.dnsAlertDroppedCount + alertOnlyCount,
             lastPacketSummary = "Allowed DNS upstream response planned for TUN",
         )
@@ -313,10 +327,29 @@ class InMemoryLabTrafficObserver(
         )
     }
 
+    private fun dropNonDns(
+        currentStats: LabTrafficObservationStats,
+        reason: String,
+    ): LabPacketHandlingResult {
+        val nextStats = if (captureMode == LabCaptureMode.DNS_ONLY_LAB) {
+            currentStats.copy(
+                dnsOnlyUnexpectedNonDnsCount = currentStats.dnsOnlyUnexpectedNonDnsCount + 1,
+                lastPacketSummary = "Unexpected non-DNS packet in DNS-only lab: $reason",
+            )
+        } else {
+            currentStats
+        }
+        return drop(nextStats, reason)
+    }
+
     private fun LabTrafficObservationStats.recordPacket(parseResult: PacketParseResult): LabTrafficObservationStats {
         return copy(
             packetCount = packetCount + 1,
             byteCount = byteCount + parseResult.metadata.byteLength,
+            fullTunnelLabPacketCount = fullTunnelLabPacketCount +
+                if (captureMode == LabCaptureMode.FULL_TUNNEL_LAB) 1 else 0,
+            dnsOnlyLabPacketCount = dnsOnlyLabPacketCount +
+                if (captureMode == LabCaptureMode.DNS_ONLY_LAB) 1 else 0,
             malformedPacketCount = malformedPacketCount + if (parseResult.metadata.malformed) 1 else 0,
             lastPacketSummary = parseResult.metadata.summary(),
         )

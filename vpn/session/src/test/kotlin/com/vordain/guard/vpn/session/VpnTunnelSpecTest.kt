@@ -74,10 +74,10 @@ class VpnTunnelSpecTest {
     }
 
     @Test
-    fun specDoesNotModelDnsSettings() {
+    fun smokeTestSpecDoesNotConfigureDnsSettings() {
         val spec = VpnTunnelSpec.establishOnlySmokeTest()
 
-        assertFalse(spec.toString().contains("dns", ignoreCase = true))
+        assertTrue(spec.dnsServers.isEmpty())
     }
 
     @Test
@@ -96,5 +96,37 @@ class VpnTunnelSpecTest {
 
         assertFalse(spec.routes.any { it.address == "0.0.0.0" && it.prefixLength == 0 })
         assertFalse(spec.routes.any { it.address == "::" && it.prefixLength == 0 })
+    }
+
+    @Test
+    fun dnsOnlySpecIncludesLocalDnsServerAddress() {
+        val spec = VpnTunnelSpec.dnsOnlyLabFiltering()
+
+        assertEquals(listOf(VpnTunnelSpec.DNS_ONLY_LAB_DNS_SERVER), spec.dnsServers)
+    }
+
+    @Test
+    fun dnsOnlySpecRoutesLocalDnsServerOnly() {
+        val spec = VpnTunnelSpec.dnsOnlyLabFiltering()
+
+        assertEquals(listOf(VpnTunnelRoute(address = VpnTunnelSpec.DNS_ONLY_LAB_DNS_SERVER, prefixLength = 32)), spec.routes)
+    }
+
+    @Test
+    fun dnsOnlySpecDoesNotUseDefaultRoutes() {
+        val spec = VpnTunnelSpec.dnsOnlyLabFiltering()
+
+        assertFalse(spec.routes.any { it.address == "0.0.0.0" && it.prefixLength == 0 })
+        assertFalse(spec.routes.any { it.address == "::" && it.prefixLength == 0 })
+        assertFalse(spec.allowNormalTrafficRouting)
+        assertEquals("DNS_ONLY_LAB", spec.modeLabel)
+    }
+
+    @Test
+    fun fullTunnelLabSpecRemainsExplicitAndSeparate() {
+        val spec = VpnTunnelSpec.labFullTunnelCapture()
+
+        assertEquals("FULL_TUNNEL_LAB", spec.modeLabel)
+        assertTrue(spec.allowNormalTrafficRouting)
     }
 }

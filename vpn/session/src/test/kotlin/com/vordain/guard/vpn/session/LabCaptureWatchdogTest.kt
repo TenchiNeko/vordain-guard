@@ -28,6 +28,19 @@ class LabCaptureWatchdogTest {
     }
 
     @Test
+    fun dnsOnlyWatchdogCanUseLongerDebugDuration() {
+        val state = watchdog.start(
+            config = LabCaptureWatchdogConfig(maxSessionMillis = 30L * 60L * 1_000L),
+            currentTimeMillis = 5_000L,
+            reason = "DNS-only lab",
+        )
+
+        assertTrue(state.active)
+        assertFalse(watchdog.isExpired(state, currentTimeMillis = 5_000L + 10L * 60L * 1_000L))
+        assertTrue(watchdog.isExpired(state, currentTimeMillis = 5_000L + 30L * 60L * 1_000L))
+    }
+
+    @Test
     fun timeoutTriggersExpiredState() {
         val state = watchdog.start(
             config = LabCaptureWatchdogConfig(maxSessionMillis = 1_000L),

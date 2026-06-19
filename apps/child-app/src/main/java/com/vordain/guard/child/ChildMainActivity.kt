@@ -32,6 +32,7 @@ import com.vordain.guard.core.pairing.PairingVerificationCode
 import com.vordain.guard.core.policysync.PersistedSignedPolicySnapshot
 import com.vordain.guard.core.policysync.PolicyVersion
 import com.vordain.guard.core.policysync.SignedPolicySnapshotRestorer
+import com.vordain.guard.core.statusreport.ChildSecurityActiveMode
 import com.vordain.guard.core.statusreport.ChildSecurityOverallStatus
 import com.vordain.guard.core.statusreport.ChildSecuritySignal
 import com.vordain.guard.core.statusreport.ChildSecurityStatusEvaluator
@@ -226,6 +227,28 @@ class ChildMainActivity : Activity() {
         })
         labCaptureText = valueLabel(createLabCaptureDisplay(LabCaptureDebugStatus.snapshot()), textSize = 14f)
         layout.addView(labCaptureText)
+
+        layout.addView(sectionTitle(ChildVpnSmokeLabels.DNS_ONLY_TITLE))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.DNS_ONLY_DESCRIPTION, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_DNS_SINKHOLE, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_ALLOWED_DROPPED, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.DNS_ONLY_NON_DNS, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.DNS_ONLY_DOH_WARNING, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.WARNING, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.DNS_ONLY_HARDENING, textSize = 14f))
+        layout.addView(button("Start DNS-only lab") {
+            startDnsOnlyLabWhenAllowed()
+        })
+        layout.addView(button("Stop DNS-only lab") {
+            stopDnsOnlyLab()
+        })
+        layout.addView(button("Refresh DNS-only stats") {
+            refreshDiagnosticsViews()
+        })
+        layout.addView(button("Copy DNS-only diagnostics") {
+            copyDiagnostics()
+        })
 
         layout.addView(sectionTitle("Setup checklist"))
         layout.addView(valueLabel("These steps help prevent silent bypass. Some settings must be turned on manually by the parent.", textSize = 14f))
@@ -700,6 +723,37 @@ class ChildMainActivity : Activity() {
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
     }
 
+    private fun startDnsOnlyLabWhenAllowed() {
+        when (val result = vpnPermissionIntentFactory.createPrepareResult(this)) {
+            VpnPrepareResult.AlreadyGranted -> {
+                setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_GRANTED)
+                setLastCommand(ChildVpnSmokeLabels.COMMAND_DNS_ONLY_START_SENT)
+                setShellStatus(ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_STARTING)
+                val intent = VordainVpnServiceIntents.startDnsOnlyLab(this)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+                setStatus(ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_ACTIVE)
+            }
+            is VpnPrepareResult.ConsentRequired -> {
+                setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_REQUIRED)
+                setLastCommand(ChildVpnSmokeLabels.COMMAND_PERMISSION_REQUESTED)
+                setStatus(ChildVpnSmokeLabels.STATUS_PERMISSION_REQUIRED)
+                startActivityForResult(result.intent, REQUEST_VPN_PERMISSION)
+            }
+        }
+    }
+
+    private fun stopDnsOnlyLab() {
+        setLastCommand(ChildVpnSmokeLabels.COMMAND_DNS_ONLY_STOP_SENT)
+        setShellStatus(ChildVpnSmokeLabels.STATUS_STOP_COMMAND_SENT)
+        startService(VordainVpnServiceIntents.stopDnsOnlyLab(this))
+        setStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
+        setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
+    }
+
     private fun openSettings(action: String) {
         val intent = Intent(action)
         runCatching {
@@ -1041,6 +1095,7 @@ class ChildMainActivity : Activity() {
         val watchdogLabel = LabCaptureDebugStatus.watchdogLabel()
         val lines = mutableListOf(
             "Lab mode status: $shellStatus",
+            "Lab capture mode: ${stats.activeModeLabel}",
             "Lab auto-stop watchdog: $watchdogLabel",
             "Packet count: ${stats.packetCount}",
             "Byte count: ${stats.byteCount}",
@@ -1058,6 +1113,11 @@ class ChildMainActivity : Activity() {
             "DNS alert-only dropped count: ${stats.dnsAlertDroppedCount}",
             "DNS response write successes: ${stats.dnsResponseWriteSuccessCount}",
             "DNS response write failures: ${stats.dnsResponseWriteFailureCount}",
+            "DNS-only packet count: ${stats.dnsOnlyLabPacketCount}",
+            "DNS-only unexpected non-DNS packets: ${stats.dnsOnlyUnexpectedNonDnsCount}",
+            "DNS-only blocked responses: ${stats.dnsOnlyBlockedResponseCount}",
+            "DNS-only allowed forwarded: ${stats.dnsOnlyAllowedForwardedCount}",
+            "DNS-only allowed failures: ${stats.dnsOnlyAllowedForwardFailureCount}",
             "Allowed/block/alert counts: ${stats.allowedDomainCount}/${stats.blockedDomainCount}/${stats.alertOnlyDomainCount}",
             "Malformed packet/DNS counts: ${stats.malformedPacketCount}/${stats.malformedDnsCount}",
             "Last packet summary: ${stats.lastPacketSummary ?: "none"}",
@@ -1066,6 +1126,8 @@ class ChildMainActivity : Activity() {
             ChildVpnSmokeLabels.LAB_DNS_SINKHOLE,
             ChildVpnSmokeLabels.LAB_ALLOWED_DROPPED,
             ChildVpnSmokeLabels.LAB_ALLOWED_NON_DNS_DROPPED,
+            ChildVpnSmokeLabels.DNS_ONLY_NON_DNS,
+            ChildVpnSmokeLabels.DNS_ONLY_DOH_WARNING,
             ChildVpnSmokeLabels.LAB_INTERNET_MAY_NOT_WORK,
             ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION,
             ChildVpnSmokeLabels.LAB_AUTO_STOP,
@@ -1155,7 +1217,21 @@ class ChildMainActivity : Activity() {
         val noUnrestrictedProfilesConfirmed = hardening.isConfirmed(HardeningSetupStep.NO_UNRESTRICTED_SECONDARY_USERS) &&
             hardening.isConfirmed(HardeningSetupStep.NO_UNRESTRICTED_WORK_PROFILE)
         val labCaptureActive = shellStatus == ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_ACTIVE ||
-            shellStatus == ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_STARTING
+            shellStatus == ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_STARTING ||
+            shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_ACTIVE ||
+            shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_STARTING
+        val labStats = LabCaptureDebugStatus.snapshot()
+        val activeMode = if (
+            shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_ACTIVE ||
+            shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_STARTING ||
+            labStats.activeModeLabel == "DNS-only lab"
+        ) {
+            ChildSecurityActiveMode.DNS_ONLY_LAB
+        } else if (labCaptureActive) {
+            ChildSecurityActiveMode.FULL_TUNNEL_LAB
+        } else {
+            ChildSecurityActiveMode.NONE
+        }
         return childSecurityStatusEvaluator.evaluate(
             ChildSecurityStatusInput(
                 childDeviceId = DeviceId(childDeviceId),
@@ -1180,6 +1256,10 @@ class ChildMainActivity : Activity() {
                 bypassRiskLabel = hardening.latestPinCompromiseSignal.toDisplayLabel(),
                 labCaptureActive = labCaptureActive,
                 pinCompromiseSuspected = hardening.latestPinCompromiseSignal.suspected,
+                activeMode = activeMode,
+                dnsBlockedResponseCount = labStats.dnsBlockedResponseCount,
+                dnsAllowedForwardedCount = labStats.dnsAllowedForwardedCount,
+                dnsAllowedForwardFailureCount = labStats.dnsAllowedForwardFailureCount,
             ),
         )
     }
@@ -1194,6 +1274,13 @@ class ChildMainActivity : Activity() {
             append("Setup summary: ${report.setupSummaryLabel ?: "Unknown"}\n")
             append("Heartbeat: ${report.heartbeatLabel ?: "Unknown"}\n")
             append("Bypass risk: ${report.bypassRiskLabel ?: "Unknown"}\n")
+            append("Active mode: ${report.activeMode.toDisplayLabel()}\n")
+            append("DNS blocked responses: ${report.dnsBlockedResponseCount}\n")
+            append("DNS allowed forwarded: ${report.dnsAllowedForwardedCount}\n")
+            append("DNS allowed forward failures: ${report.dnsAllowedForwardFailureCount}\n")
+            if (report.activeMode == ChildSecurityActiveMode.DNS_ONLY_LAB) {
+                append("Non-DNS traffic is not inspected in DNS-only mode.\n")
+            }
             append("Signals: ${report.signals.toDisplayLabels()}\n")
             append(report.warningText)
         }
@@ -1465,6 +1552,14 @@ class ChildMainActivity : Activity() {
             ChildSecurityOverallStatus.VPN_STOPPED -> "VPN stopped"
             ChildSecurityOverallStatus.PIN_COMPROMISE_SUSPECTED -> "PIN may be compromised"
             ChildSecurityOverallStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun ChildSecurityActiveMode.toDisplayLabel(): String {
+        return when (this) {
+            ChildSecurityActiveMode.NONE -> "None"
+            ChildSecurityActiveMode.DNS_ONLY_LAB -> "DNS-only lab active"
+            ChildSecurityActiveMode.FULL_TUNNEL_LAB -> "Full-tunnel lab active"
         }
     }
 

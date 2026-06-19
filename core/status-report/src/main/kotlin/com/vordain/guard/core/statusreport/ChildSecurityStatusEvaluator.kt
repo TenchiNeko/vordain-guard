@@ -27,6 +27,10 @@ class ChildSecurityStatusEvaluator {
             heartbeatLabel = input.heartbeatLabel?.takeIf(String::isNotBlank),
             setupSummaryLabel = input.setupSummaryLabel?.takeIf(String::isNotBlank),
             bypassRiskLabel = input.bypassRiskLabel?.takeIf(String::isNotBlank),
+            activeMode = input.activeMode,
+            dnsBlockedResponseCount = input.dnsBlockedResponseCount,
+            dnsAllowedForwardedCount = input.dnsAllowedForwardedCount,
+            dnsAllowedForwardFailureCount = input.dnsAllowedForwardFailureCount,
         )
     }
 

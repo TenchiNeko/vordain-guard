@@ -193,6 +193,76 @@ class InMemoryLabTrafficObserverTest {
     }
 
     @Test
+    fun dnsOnlyBlockedDnsWritesBlockResponseAndCountsDnsOnlyBlock() {
+        val observer = InMemoryLabTrafficObserver(
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload())),
+        )
+        observer.configureUpstream(
+            forwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            upstreamTransport = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload())),
+            captureMode = LabCaptureMode.DNS_ONLY_LAB,
+        )
+        val packet = dnsPacketFor("blocked.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_BLOCK_RESPONSE, result.action)
+        assertEquals(1, result.stats.dnsOnlyBlockedResponseCount)
+    }
+
+    @Test
+    fun dnsOnlyAllowedDnsForwardsUpstreamAndCountsDnsOnlyForward() {
+        val observer = InMemoryLabTrafficObserver()
+        observer.configureUpstream(
+            forwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            upstreamTransport = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload())),
+            captureMode = LabCaptureMode.DNS_ONLY_LAB,
+        )
+        val packet = dnsPacketFor("allowed.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_UPSTREAM_RESPONSE, result.action)
+        assertEquals(1, result.stats.dnsOnlyAllowedForwardedCount)
+    }
+
+    @Test
+    fun dnsOnlyNonDnsIsDroppedAndCountedAsUnexpected() {
+        val observer = InMemoryLabTrafficObserver()
+        observer.configureUpstream(
+            forwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            upstreamTransport = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload())),
+            captureMode = LabCaptureMode.DNS_ONLY_LAB,
+        )
+        val packet = ipv4UdpPacket(payload = byteArrayOf(1, 2, 3), sourcePort = 12_345, destinationPort = 123)
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.DROP, result.action)
+        assertEquals(1, result.stats.dnsOnlyUnexpectedNonDnsCount)
+    }
+
+    @Test
+    fun dnsOnlyStatsAreSeparateFromFullTunnelStats() {
+        val observer = InMemoryLabTrafficObserver()
+        val packet = ipv4UdpPacket(payload = byteArrayOf(1, 2, 3), sourcePort = 12_345, destinationPort = 123)
+
+        val fullTunnelStats = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L).stats
+        observer.configureUpstream(
+            forwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            upstreamTransport = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload())),
+            captureMode = LabCaptureMode.DNS_ONLY_LAB,
+        )
+        val dnsOnlyStats = observer.handlePacket(packet, packet.size, observedAtMillis = 2_000L).stats
+
+        assertEquals(1, fullTunnelStats.fullTunnelLabPacketCount)
+        assertEquals(0, fullTunnelStats.dnsOnlyLabPacketCount)
+        assertEquals(1, dnsOnlyStats.fullTunnelLabPacketCount)
+        assertEquals(1, dnsOnlyStats.dnsOnlyLabPacketCount)
+    }
+
+    @Test
     fun allowedDnsWithUpstreamFailureReturnsDropAndIncrementsFailureCount() {
         val observer = InMemoryLabTrafficObserver(
             initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,

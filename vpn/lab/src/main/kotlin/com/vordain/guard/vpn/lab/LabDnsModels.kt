@@ -28,8 +28,12 @@ data class LabDnsObservation(
 }
 
 data class LabTrafficObservationStats(
+    val activeModeLabel: String = LabCaptureMode.FULL_TUNNEL_LAB.displayLabel,
     val packetCount: Long = 0,
     val byteCount: Long = 0,
+    val fullTunnelLabPacketCount: Long = 0,
+    val dnsOnlyLabPacketCount: Long = 0,
+    val dnsOnlyUnexpectedNonDnsCount: Long = 0,
     val dnsUpstreamHost: String = "1.1.1.1",
     val dnsUpstreamPort: Int = 53,
     val dnsPacketCount: Long = 0,
@@ -38,9 +42,12 @@ data class LabTrafficObservationStats(
     val blockedDomainCount: Long = 0,
     val alertOnlyDomainCount: Long = 0,
     val dnsBlockedResponseCount: Long = 0,
+    val dnsOnlyBlockedResponseCount: Long = 0,
     val dnsAllowedDroppedCount: Long = 0,
     val dnsAllowedForwardedCount: Long = 0,
+    val dnsOnlyAllowedForwardedCount: Long = 0,
     val dnsAllowedForwardFailureCount: Long = 0,
+    val dnsOnlyAllowedForwardFailureCount: Long = 0,
     val dnsAllowedForwardTimeoutCount: Long = 0,
     val dnsAlertDroppedCount: Long = 0,
     val dnsResponseWriteSuccessCount: Long = 0,
@@ -57,6 +64,11 @@ enum class LabPacketAction {
     WRITE_DNS_BLOCK_RESPONSE,
     WRITE_DNS_UPSTREAM_RESPONSE,
     IGNORE,
+}
+
+enum class LabCaptureMode(val displayLabel: String) {
+    FULL_TUNNEL_LAB("Full-tunnel lab"),
+    DNS_ONLY_LAB("DNS-only lab"),
 }
 
 data class LabPacketHandlingResult(

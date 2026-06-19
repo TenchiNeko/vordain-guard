@@ -4,8 +4,10 @@ data class VpnTunnelSpec(
     val sessionName: String,
     val addresses: List<VpnTunnelAddress>,
     val routes: List<VpnTunnelRoute>,
+    val dnsServers: List<String> = emptyList(),
     val allowNormalTrafficRouting: Boolean = false,
     val labMode: Boolean = false,
+    val modeLabel: String = "ESTABLISH_ONLY",
 ) {
     init {
         require(sessionName.isNotBlank()) { "VPN tunnel session name must not be blank" }
@@ -37,7 +39,21 @@ data class VpnTunnelSpec(
                 ),
                 allowNormalTrafficRouting = true,
                 labMode = true,
+                modeLabel = "FULL_TUNNEL_LAB",
             )
         }
+
+        fun dnsOnlyLabFiltering(): VpnTunnelSpec {
+            return VpnTunnelSpec(
+                sessionName = "Vordain Guard DNS Lab",
+                addresses = listOf(VpnTunnelAddress(address = "10.111.0.2", prefixLength = 32)),
+                routes = listOf(VpnTunnelRoute(address = DNS_ONLY_LAB_DNS_SERVER, prefixLength = 32)),
+                dnsServers = listOf(DNS_ONLY_LAB_DNS_SERVER),
+                labMode = true,
+                modeLabel = "DNS_ONLY_LAB",
+            )
+        }
+
+        const val DNS_ONLY_LAB_DNS_SERVER = "10.111.0.1"
     }
 }

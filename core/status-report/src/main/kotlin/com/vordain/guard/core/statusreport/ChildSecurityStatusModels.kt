@@ -28,6 +28,12 @@ enum class ChildSecuritySignal {
     VPN_STOPPED,
 }
 
+enum class ChildSecurityActiveMode {
+    NONE,
+    DNS_ONLY_LAB,
+    FULL_TUNNEL_LAB,
+}
+
 data class ChildSecurityStatusReport(
     val childDeviceId: DeviceId,
     val generatedAtMillis: Long,
@@ -38,6 +44,10 @@ data class ChildSecurityStatusReport(
     val heartbeatLabel: String?,
     val setupSummaryLabel: String?,
     val bypassRiskLabel: String?,
+    val activeMode: ChildSecurityActiveMode = ChildSecurityActiveMode.NONE,
+    val dnsBlockedResponseCount: Long = 0,
+    val dnsAllowedForwardedCount: Long = 0,
+    val dnsAllowedForwardFailureCount: Long = 0,
     val warningText: String = WARNING_TEXT,
 ) {
     companion object {
@@ -66,4 +76,8 @@ data class ChildSecurityStatusInput(
     val bypassRiskLabel: String?,
     val labCaptureActive: Boolean,
     val pinCompromiseSuspected: Boolean,
+    val activeMode: ChildSecurityActiveMode = ChildSecurityActiveMode.NONE,
+    val dnsBlockedResponseCount: Long = 0,
+    val dnsAllowedForwardedCount: Long = 0,
+    val dnsAllowedForwardFailureCount: Long = 0,
 )

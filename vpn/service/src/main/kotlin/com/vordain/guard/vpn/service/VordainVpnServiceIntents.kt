@@ -23,4 +23,14 @@ object VordainVpnServiceIntents {
         return Intent(context, VordainVpnService::class.java)
             .setAction(VordainVpnServiceActions.ACTION_STOP_LAB_CAPTURE)
     }
+
+    fun startDnsOnlyLab(context: Context): Intent {
+        return Intent(context, VordainVpnService::class.java)
+            .setAction(VordainVpnServiceActions.ACTION_START_DNS_ONLY_LAB)
+    }
+
+    fun stopDnsOnlyLab(context: Context): Intent {
+        return Intent(context, VordainVpnService::class.java)
+            .setAction(VordainVpnServiceActions.ACTION_STOP_DNS_ONLY_LAB)
+    }
 }

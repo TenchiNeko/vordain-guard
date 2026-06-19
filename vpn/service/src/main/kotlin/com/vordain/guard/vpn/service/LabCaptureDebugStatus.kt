@@ -3,6 +3,7 @@ package com.vordain.guard.vpn.service
 import android.net.VpnService
 import com.vordain.guard.core.policy.Policy
 import com.vordain.guard.vpn.lab.InMemoryLabTrafficObserver
+import com.vordain.guard.vpn.lab.LabCaptureMode
 import com.vordain.guard.vpn.lab.LabDnsForwardingMode
 import com.vordain.guard.vpn.lab.LabTrafficObservationStats
 import com.vordain.guard.vpn.lab.LabTrafficObserver
@@ -32,10 +33,19 @@ object LabCaptureDebugStatus {
         watchdogState = state
     }
 
-    fun configureProtectedDnsUpstream(vpnService: VpnService) {
+    fun configureFullTunnelProtectedDnsUpstream(vpnService: VpnService) {
         observer.configureUpstream(
             forwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
             upstreamTransport = AndroidProtectedUdpDnsTransport(vpnService),
+            captureMode = LabCaptureMode.FULL_TUNNEL_LAB,
+        )
+    }
+
+    fun configureDnsOnlyProtectedDnsUpstream(vpnService: VpnService) {
+        observer.configureUpstream(
+            forwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            upstreamTransport = AndroidProtectedUdpDnsTransport(vpnService),
+            captureMode = LabCaptureMode.DNS_ONLY_LAB,
         )
     }
 

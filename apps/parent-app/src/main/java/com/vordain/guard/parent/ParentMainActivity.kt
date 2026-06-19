@@ -35,6 +35,7 @@ import com.vordain.guard.core.policysync.DebugPolicyUpdateCodec
 import com.vordain.guard.core.policysync.PolicyUpdateSignature
 import com.vordain.guard.core.policysync.PolicyVersion
 import com.vordain.guard.core.policysync.SignedPolicyUpdate
+import com.vordain.guard.core.statusreport.ChildSecurityActiveMode
 import com.vordain.guard.core.statusreport.ChildSecurityOverallStatus
 import com.vordain.guard.core.statusreport.ChildSecuritySignal
 import com.vordain.guard.core.statusreport.ChildSecurityStatusReport
@@ -428,6 +429,16 @@ class ParentMainActivity : Activity() {
             "Setup summary: ${report.setupSummaryLabel ?: "Unknown"}",
             "Heartbeat: ${report.heartbeatLabel ?: "Unknown"}",
             "Bypass risk: ${report.bypassRiskLabel ?: "Unknown"}",
+            "Active mode: ${report.activeMode.toDisplayLabel()}",
+            "DNS blocked responses: ${report.dnsBlockedResponseCount}",
+            "DNS allowed forwarded: ${report.dnsAllowedForwardedCount}",
+            "DNS allowed forward failures: ${report.dnsAllowedForwardFailureCount}",
+            if (report.activeMode == ChildSecurityActiveMode.DNS_ONLY_LAB) {
+                "Non-DNS traffic is not inspected in DNS-only mode."
+            } else {
+                "DNS-only lab is not active."
+            },
+            "Not full protection.",
             "Signals: ${report.signals.toDisplayLabels()}",
             report.warningText,
         ).joinToString(separator = "\n")
@@ -590,6 +601,14 @@ class ParentMainActivity : Activity() {
             ChildSecurityOverallStatus.VPN_STOPPED -> "VPN stopped"
             ChildSecurityOverallStatus.PIN_COMPROMISE_SUSPECTED -> "PIN may be compromised"
             ChildSecurityOverallStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun ChildSecurityActiveMode.toDisplayLabel(): String {
+        return when (this) {
+            ChildSecurityActiveMode.NONE -> "None"
+            ChildSecurityActiveMode.DNS_ONLY_LAB -> "DNS-only lab active"
+            ChildSecurityActiveMode.FULL_TUNNEL_LAB -> "Full-tunnel lab active"
         }
     }
 

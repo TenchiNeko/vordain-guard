@@ -19,6 +19,9 @@ class AndroidVpnTunnelOpener {
             spec.routes.forEach { route ->
                 builder.addRoute(route.address, route.prefixLength)
             }
+            spec.dnsServers.forEach { dnsServer ->
+                builder.addDnsServer(dnsServer)
+            }
 
             val descriptor = builder.establish()
             if (descriptor == null) {

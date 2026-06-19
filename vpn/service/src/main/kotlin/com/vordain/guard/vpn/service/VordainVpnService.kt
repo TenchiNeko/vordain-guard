@@ -13,7 +13,6 @@ class VordainVpnService : VpnService() {
     private var tunnelHandle: AndroidVpnTunnelHandle? = null
     private var captureLoop: AndroidTunPacketCaptureLoop? = null
     private val labWatchdog = LabCaptureWatchdog()
-    private val labWatchdogConfig = LabCaptureWatchdogConfig()
     private val labWatchdogRunning = AtomicBoolean(false)
     @Volatile
     private var labWatchdogState: LabCaptureWatchdogState = LabCaptureWatchdogState.inactive()
@@ -43,7 +42,23 @@ class VordainVpnService : VpnService() {
                     VpnForegroundNotification.NOTIFICATION_ID,
                     VpnForegroundNotification.build(this),
                 )
-                establishTunnel(VpnTunnelSpec.labFullTunnelCapture(), capturePackets = true)
+                establishTunnel(
+                    spec = VpnTunnelSpec.labFullTunnelCapture(),
+                    capturePackets = true,
+                    labCaptureMode = ServiceLabCaptureMode.FULL_TUNNEL,
+                )
+                START_STICKY
+            }
+            VpnServiceCommandResult.HandledDnsOnlyLabStart -> {
+                startForeground(
+                    VpnForegroundNotification.NOTIFICATION_ID,
+                    VpnForegroundNotification.build(this),
+                )
+                establishTunnel(
+                    spec = VpnTunnelSpec.dnsOnlyLabFiltering(),
+                    capturePackets = true,
+                    labCaptureMode = ServiceLabCaptureMode.DNS_ONLY,
+                )
                 START_STICKY
             }
             VpnServiceCommandResult.HandledStop -> {
@@ -85,18 +100,38 @@ class VordainVpnService : VpnService() {
     private fun establishTunnel(
         spec: VpnTunnelSpec,
         capturePackets: Boolean,
+        labCaptureMode: ServiceLabCaptureMode = ServiceLabCaptureMode.NONE,
     ) {
         when (val result = tunnelOpener.establish(this, spec)) {
             is AndroidVpnTunnelOpenResult.Established -> {
                 closeTunnel()
                 tunnelHandle = result.handle
                 if (capturePackets) {
-                    LabCaptureDebugStatus.configureProtectedDnsUpstream(this)
+                    when (labCaptureMode) {
+                        ServiceLabCaptureMode.FULL_TUNNEL -> {
+                            LabCaptureDebugStatus.configureFullTunnelProtectedDnsUpstream(this)
+                        }
+                        ServiceLabCaptureMode.DNS_ONLY -> {
+                            LabCaptureDebugStatus.configureDnsOnlyProtectedDnsUpstream(this)
+                        }
+                        ServiceLabCaptureMode.NONE -> Unit
+                    }
                     captureLoop = AndroidTunPacketCaptureLoop(
                         descriptor = result.handle.descriptor,
                         observer = LabCaptureDebugStatus.observer(),
                     ).also(AndroidTunPacketCaptureLoop::start)
-                    startLabWatchdog()
+                    startLabWatchdog(
+                        config = if (labCaptureMode == ServiceLabCaptureMode.DNS_ONLY) {
+                            DNS_ONLY_LAB_WATCHDOG_CONFIG
+                        } else {
+                            FULL_TUNNEL_LAB_WATCHDOG_CONFIG
+                        },
+                        reason = when (labCaptureMode) {
+                            ServiceLabCaptureMode.DNS_ONLY -> "DNS-only lab auto-stop watchdog active"
+                            ServiceLabCaptureMode.FULL_TUNNEL -> "full-tunnel lab auto-stop watchdog active"
+                            ServiceLabCaptureMode.NONE -> "lab auto-stop watchdog active"
+                        },
+                    )
                 } else {
                     stopLabWatchdog("normal shell established")
                 }
@@ -120,12 +155,15 @@ class VordainVpnService : VpnService() {
         tunnelHandle = null
     }
 
-    private fun startLabWatchdog() {
+    private fun startLabWatchdog(
+        config: LabCaptureWatchdogConfig,
+        reason: String,
+    ) {
         val now = System.currentTimeMillis()
         labWatchdogState = labWatchdog.start(
-            config = labWatchdogConfig,
+            config = config,
             currentTimeMillis = now,
-            reason = "lab DNS enforcement auto-stop watchdog active",
+            reason = reason,
         )
         LabCaptureDebugStatus.updateWatchdogState(labWatchdogState)
         if (!labWatchdogState.active || !labWatchdogRunning.compareAndSet(false, true)) {
@@ -168,5 +206,15 @@ class VordainVpnService : VpnService() {
         var lifecycleSink: VpnLifecycleSink = VpnLifecycleSink.NoOp
         var sessionSink: VpnSessionSink = DefaultServiceVpnSessionSinkFactory.create()
         var tunnelOpener: AndroidVpnTunnelOpener = AndroidVpnTunnelOpener()
+        val FULL_TUNNEL_LAB_WATCHDOG_CONFIG = LabCaptureWatchdogConfig()
+        val DNS_ONLY_LAB_WATCHDOG_CONFIG = LabCaptureWatchdogConfig(
+            maxSessionMillis = 30L * 60L * 1_000L,
+        )
     }
+}
+
+private enum class ServiceLabCaptureMode {
+    NONE,
+    FULL_TUNNEL,
+    DNS_ONLY,
 }
