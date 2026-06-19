@@ -48,7 +48,7 @@ object ChildVpnSmokeLabels {
     const val DNS_ONLY_TITLE = "DNS-only lab filtering"
     const val DNS_ONLY_DESCRIPTION = "Routes DNS queries to Vordain without routing all traffic."
     const val DNS_ONLY_NON_DNS = "Non-DNS traffic is not inspected in this mode."
-    const val DNS_ONLY_DOH_WARNING = "This does not block DoH/direct-IP bypasses yet."
+    const val DNS_ONLY_DOH_WARNING = "DoH resolver domains are blocked through DNS when seen; direct-IP/app encrypted DNS paths require hardening."
     const val DNS_ONLY_HARDENING = "For stronger device hardening, use Always-on VPN + Block without VPN + Settings/App Lock."
     const val DIAGNOSTICS_COPIED = "Diagnostics copied"
 }

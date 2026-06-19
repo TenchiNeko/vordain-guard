@@ -4,6 +4,7 @@ import com.vordain.guard.core.model.AppPackageName
 import com.vordain.guard.core.model.DomainName
 import com.vordain.guard.core.model.LockdownMode
 import com.vordain.guard.core.model.PolicyId
+import com.vordain.guard.core.intelligence.EncryptedDnsResolverSeedList
 import com.vordain.guard.core.policy.DefaultPolicyEngine
 import com.vordain.guard.core.policy.Policy
 import com.vordain.guard.vpn.classifier.StaticRuleListClassifier
@@ -24,6 +25,7 @@ class InMemoryLabTrafficObserver(
     private val dnsResponseBuilder: DnsUdpResponseBuilder = DnsUdpResponseBuilder(),
     private val dnsUpstreamResponseWrapper: DnsUdpUpstreamResponseWrapper = DnsUdpUpstreamResponseWrapper(),
     private val domainTrafficEvaluator: DomainTrafficEvaluator = defaultDomainTrafficEvaluator(),
+    private val encryptedDnsResolverSeedList: EncryptedDnsResolverSeedList = EncryptedDnsResolverSeedList(),
     initialPolicy: Policy = defaultLabPolicy(),
     private val recentObservationLimit: Int = DEFAULT_RECENT_OBSERVATION_LIMIT,
     private val dnsBlockResponseMode: DnsBlockResponseMode = DnsBlockResponseMode.NXDOMAIN,
@@ -180,13 +182,15 @@ class InMemoryLabTrafficObserver(
             }
             is DnsParseResult.Success -> {
                 val decisions = dnsResult.questions.map { question ->
-                    val decision = domainTrafficEvaluator.evaluateDomain(question.domain, policy)
-                    LabDnsDomainDecision(
-                        domain = question.domain,
-                        actionLabel = decision.action.name,
-                        reasonLabel = decision.evaluation.reason.name,
-                        shouldCreateEvent = decision.evaluation.shouldCreateEvent,
-                    )
+                    hardBypassDecision(question.domain) ?: run {
+                        val decision = domainTrafficEvaluator.evaluateDomain(question.domain, policy)
+                        LabDnsDomainDecision(
+                            domain = question.domain,
+                            actionLabel = decision.action.name,
+                            reasonLabel = decision.evaluation.reason.name,
+                            shouldCreateEvent = decision.evaluation.shouldCreateEvent,
+                        )
+                    }
                 }
                 val observation = LabDnsObservation(
                     observedAtMillis = observedAtMillis,
@@ -197,12 +201,14 @@ class InMemoryLabTrafficObserver(
                 val allowedCount = decisions.count { it.actionLabel == TrafficAction.ALLOW.name }
                 val blockedCount = decisions.count { it.actionLabel == TrafficAction.BLOCK.name }
                 val alertOnlyCount = decisions.count { it.actionLabel == TrafficAction.ALERT_ONLY.name }
+                val encryptedDnsBlockedCount = decisions.count { it.categoryLabel == ENCRYPTED_DNS_CATEGORY_LABEL }
                 val observedStats = currentStats.copy(
                     dnsPacketCount = currentStats.dnsPacketCount + 1,
                     dnsQueryCount = currentStats.dnsQueryCount + dnsResult.questions.size,
                     allowedDomainCount = currentStats.allowedDomainCount + allowedCount,
                     blockedDomainCount = currentStats.blockedDomainCount + blockedCount,
                     alertOnlyDomainCount = currentStats.alertOnlyDomainCount + alertOnlyCount,
+                    encryptedDnsBlockedCount = currentStats.encryptedDnsBlockedCount + encryptedDnsBlockedCount,
                     lastDnsObservation = observation,
                     recentDnsObservations = (listOf(observation) + currentStats.recentDnsObservations)
                         .take(recentObservationLimit),
@@ -314,6 +320,17 @@ class InMemoryLabTrafficObserver(
         )
     }
 
+    private fun hardBypassDecision(domain: DomainName): LabDnsDomainDecision? {
+        val match = encryptedDnsResolverSeedList.classify(domain) ?: return null
+        return LabDnsDomainDecision(
+            domain = domain,
+            actionLabel = TrafficAction.BLOCK.name,
+            reasonLabel = "ENCRYPTED_DNS_RESOLVER_BLOCKED_IN_LAB",
+            shouldCreateEvent = true,
+            categoryLabel = match.classification.name,
+        )
+    }
+
     private fun drop(
         currentStats: LabTrafficObservationStats,
         reason: String,
@@ -358,6 +375,7 @@ class InMemoryLabTrafficObserver(
     companion object {
         const val DNS_PORT = 53
         const val DEFAULT_UPSTREAM_HOST = "1.1.1.1"
+        const val ENCRYPTED_DNS_CATEGORY_LABEL = "DNS_OVER_HTTPS"
         private const val DEFAULT_RECENT_OBSERVATION_LIMIT = 10
 
         fun defaultLabPolicy(): Policy {

@@ -41,6 +41,13 @@ import com.vordain.guard.core.statusreport.ChildSecuritySignal
 import com.vordain.guard.core.statusreport.ChildSecurityStatusReport
 import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodec
 import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodecResult
+import com.vordain.guard.features.bypassrisk.BypassRiskCategory
+import com.vordain.guard.features.bypassrisk.BypassRiskOverallStatus
+import com.vordain.guard.features.bypassrisk.BypassRiskStatus
+import com.vordain.guard.features.bypassrisk.BypassRiskSummary
+import com.vordain.guard.features.bypassrisk.DebugBypassRiskReport
+import com.vordain.guard.features.bypassrisk.DebugBypassRiskReportCodec
+import com.vordain.guard.features.bypassrisk.DebugBypassRiskReportCodecResult
 import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodec
 import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodecResult
 import com.vordain.guard.features.setupchecklist.HardeningEvidenceType
@@ -56,6 +63,7 @@ class ParentMainActivity : Activity() {
     private val pairingEvaluator = PairingEvaluator()
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
     private val childSecurityReportCodec = DebugChildSecurityReportCodec()
+    private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
     private lateinit var stateStore: ParentDebugStateStore
     private lateinit var targetDeviceInput: EditText
     private lateinit var policyVersionInput: EditText
@@ -75,6 +83,8 @@ class ParentMainActivity : Activity() {
     private lateinit var setupReportOutput: TextView
     private lateinit var childSecurityReportInput: EditText
     private lateinit var childSecurityReportOutput: TextView
+    private lateinit var bypassRiskReportInput: EditText
+    private lateinit var bypassRiskReportOutput: TextView
     private var lastPayload: String = ""
     private var lastPairingInvitePayload: String = ""
     private var lastPairingAcceptancePayload: String = ""
@@ -83,6 +93,8 @@ class ParentMainActivity : Activity() {
     private var decodedHardeningSetupReport: HardeningSetupSnapshot? = null
     private var lastChildSecurityStatusReportPayload: String = ""
     private var decodedChildSecurityStatusReport: ChildSecurityStatusReport? = null
+    private var lastBypassRiskReportPayload: String = ""
+    private var decodedBypassRiskReport: DebugBypassRiskReport? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,6 +124,7 @@ class ParentMainActivity : Activity() {
         acceptedChildSummary = snapshot.acceptedChildSummary
         lastHardeningSetupReportPayload = snapshot.latestHardeningSetupReportPayload.orEmpty()
         lastChildSecurityStatusReportPayload = snapshot.latestChildSecurityStatusReportPayload.orEmpty()
+        lastBypassRiskReportPayload = snapshot.latestBypassRiskReportPayload.orEmpty()
         pairingSessionInput = editText(snapshot.pairingSessionId)
         parentDeviceInput = editText(snapshot.parentDeviceId)
         parentDisplayNameInput = editText(snapshot.parentDisplayName)
@@ -120,6 +133,7 @@ class ParentMainActivity : Activity() {
         childAcceptanceInput = editText(lastPairingAcceptancePayload)
         setupReportInput = editText(lastHardeningSetupReportPayload)
         childSecurityReportInput = editText(lastChildSecurityStatusReportPayload)
+        bypassRiskReportInput = editText(lastBypassRiskReportPayload)
         targetDeviceInput = editText(snapshot.targetChildDeviceId)
         policyVersionInput = editText(snapshot.policyVersion)
         allowDomainsInput = editText(snapshot.allowDomainsText)
@@ -192,6 +206,19 @@ class ParentMainActivity : Activity() {
         })
         childSecurityReportOutput = valueLabel(createChildSecurityStatusOutput(), 14f)
         layout.addView(childSecurityReportOutput)
+
+        layout.addView(sectionTitle("DNS-only bypass risk"))
+        layout.addView(valueLabel("DNS-only filtering is not full protection.", 14f))
+        layout.addView(valueLabel("Production sync will use encrypted relay later.", 14f))
+        layout.addView(labeledField("Paste bypass-risk report", bypassRiskReportInput))
+        layout.addView(button("Decode bypass-risk report") {
+            decodeBypassRiskReport()
+        })
+        layout.addView(button("Clear bypass-risk report") {
+            clearBypassRiskReport()
+        })
+        bypassRiskReportOutput = valueLabel(createBypassRiskOutput(), 14f)
+        layout.addView(bypassRiskReportOutput)
 
         return ScrollView(this).apply { addView(layout) }
     }
@@ -336,6 +363,7 @@ class ParentMainActivity : Activity() {
             acceptedChildSummary = acceptedChildSummary,
             latestHardeningSetupReportPayload = lastHardeningSetupReportPayload.takeIf(String::isNotBlank),
             latestChildSecurityStatusReportPayload = lastChildSecurityStatusReportPayload.takeIf(String::isNotBlank),
+            latestBypassRiskReportPayload = lastBypassRiskReportPayload.takeIf(String::isNotBlank),
         )
     }
 
@@ -442,6 +470,54 @@ class ParentMainActivity : Activity() {
             "Signals: ${report.signals.toDisplayLabels()}",
             report.warningText,
         ).joinToString(separator = "\n")
+    }
+
+    private fun decodeBypassRiskReport() {
+        lastBypassRiskReportPayload = bypassRiskReportInput.text.toString()
+        bypassRiskReportOutput.text = when (val result = bypassRiskReportCodec.decode(lastBypassRiskReportPayload)) {
+            is DebugBypassRiskReportCodecResult.Decoded -> {
+                decodedBypassRiskReport = result.report
+                createBypassRiskOutput()
+            }
+            is DebugBypassRiskReportCodecResult.Rejected -> {
+                decodedBypassRiskReport = null
+                "Bypass-risk report rejected: ${result.reason}"
+            }
+        }
+        stateStore.save(createSnapshot())
+    }
+
+    private fun clearBypassRiskReport() {
+        lastBypassRiskReportPayload = ""
+        decodedBypassRiskReport = null
+        bypassRiskReportInput.setText("")
+        bypassRiskReportOutput.text = createBypassRiskOutput()
+        stateStore.save(createSnapshot())
+    }
+
+    private fun createBypassRiskOutput(): String {
+        val report = decodedBypassRiskReport
+            ?: bypassRiskReportCodec.decode(lastBypassRiskReportPayload)
+                .let { result -> (result as? DebugBypassRiskReportCodecResult.Decoded)?.report }
+            ?: return "No bypass-risk report decoded yet"
+        decodedBypassRiskReport = report
+        val summary = report.summary
+        return buildString {
+            append("Child device id: ${report.childDeviceId.value}\n")
+            append("Generated at: ${report.generatedAtMillis}\n")
+            append("Overall bypass risk: ${summary.overallStatus.toDisplayLabel()}\n")
+            append("Highest severity: ${summary.highestSeverity}\n")
+            append(summary.warningText)
+            append('\n')
+            append("DoH resolver risk: ${summary.itemLabel(BypassRiskCategory.DNS_OVER_HTTPS)}\n")
+            append("Private DNS: ${summary.itemLabel(BypassRiskCategory.PRIVATE_DNS)}\n")
+            append("Alternate VPN app: ${summary.itemLabel(BypassRiskCategory.ALTERNATE_VPN_APP)}\n")
+            append("Proxy app: ${summary.itemLabel(BypassRiskCategory.PROXY_APP)}\n")
+            append("Private browser: ${summary.itemLabel(BypassRiskCategory.PRIVATE_BROWSER)}\n")
+            append("Developer Options/ADB: ${summary.itemLabel(BypassRiskCategory.DEVELOPER_OPTIONS)} / ${summary.itemLabel(BypassRiskCategory.USB_DEBUGGING)}\n")
+            append("Unrestricted profiles: ${summary.itemLabel(BypassRiskCategory.UNRESTRICTED_PROFILE)}\n")
+            append("Direct IP limitation: ${summary.itemLabel(BypassRiskCategory.DIRECT_IP_ACCESS)}")
+        }
     }
 
     private fun createPairingOutput(): String {
@@ -636,6 +712,32 @@ class ParentMainActivity : Activity() {
             ChildSecuritySignal.PIN_COMPROMISE_SUSPECTED -> "PIN may be compromised"
             ChildSecuritySignal.VPN_STOPPED -> "VPN stopped"
         }
+    }
+
+    private fun BypassRiskOverallStatus.toDisplayLabel(): String {
+        return when (this) {
+            BypassRiskOverallStatus.NOT_REVIEWED -> "Unknown"
+            BypassRiskOverallStatus.READY_FOR_DNS_LAB -> "Ready for DNS lab"
+            BypassRiskOverallStatus.NEEDS_ATTENTION -> "Needs attention"
+            BypassRiskOverallStatus.HIGH_RISK -> "Needs attention - high risk"
+            BypassRiskOverallStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun BypassRiskStatus.toDisplayLabel(): String {
+        return when (this) {
+            BypassRiskStatus.NOT_CHECKED -> "Unknown"
+            BypassRiskStatus.NEEDS_REVIEW -> "Needs attention"
+            BypassRiskStatus.CONFIRMED_SAFE -> "Confirmed"
+            BypassRiskStatus.RISK_FOUND -> "Needs attention"
+            BypassRiskStatus.NOT_SUPPORTED -> "Not supported"
+            BypassRiskStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun BypassRiskSummary.itemLabel(category: BypassRiskCategory): String {
+        val item = items.firstOrNull { it.category == category } ?: return "Unknown"
+        return "${item.status.toDisplayLabel()} / ${item.severity} / ${item.evidenceLabel} / ${item.note}"
     }
 
     private companion object {

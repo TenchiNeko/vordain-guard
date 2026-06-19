@@ -36,6 +36,7 @@ class ParentDebugStateStore(context: Context) {
                 KEY_LATEST_CHILD_SECURITY_STATUS_REPORT_PAYLOAD,
                 null,
             ),
+            latestBypassRiskReportPayload = preferences.getString(KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD, null),
         )
     }
 
@@ -61,6 +62,7 @@ class ParentDebugStateStore(context: Context) {
                 KEY_LATEST_CHILD_SECURITY_STATUS_REPORT_PAYLOAD,
                 snapshot.latestChildSecurityStatusReportPayload,
             )
+            .putString(KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD, snapshot.latestBypassRiskReportPayload)
             .apply()
     }
 
@@ -83,6 +85,7 @@ class ParentDebugStateStore(context: Context) {
         const val KEY_ACCEPTED_CHILD_SUMMARY = "accepted_child_summary"
         const val KEY_LATEST_HARDENING_SETUP_REPORT_PAYLOAD = "latest_hardening_setup_report_payload"
         const val KEY_LATEST_CHILD_SECURITY_STATUS_REPORT_PAYLOAD = "latest_child_security_status_report_payload"
+        const val KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD = "latest_bypass_risk_report_payload"
 
         val persistedKeys = setOf(
             KEY_TARGET_CHILD_DEVICE_ID,
@@ -102,6 +105,7 @@ class ParentDebugStateStore(context: Context) {
             KEY_ACCEPTED_CHILD_SUMMARY,
             KEY_LATEST_HARDENING_SETUP_REPORT_PAYLOAD,
             KEY_LATEST_CHILD_SECURITY_STATUS_REPORT_PAYLOAD,
+            KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD,
         )
     }
 }

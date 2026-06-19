@@ -36,6 +36,7 @@ dependencies {
     implementation(project(":features:policy-editor"))
     implementation(project(":features:alerts"))
     implementation(project(":features:setup-checklist"))
+    implementation(project(":features:bypass-risk"))
     implementation(project(":data:local"))
     implementation(project(":data:relay"))
 }

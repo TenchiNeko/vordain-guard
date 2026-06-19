@@ -43,4 +43,31 @@ Expected behavior:
 * Filtering is not production-enabled yet.
 * This is not full protection.
 
-For stronger device hardening during tests, use Always-on VPN, Block without VPN, and Settings/App Lock where the device supports those settings.
+## DNS Bypass Hardening Review
+
+Before treating a tablet as ready for DNS-only lab testing, review the child app's DNS bypass hardening panel:
+
+* Turn off Android Private DNS or set it to a parent-approved provider.
+* Remove or block alternate VPN apps.
+* Remove or block proxy apps and private browsers.
+* Confirm Developer Options, USB debugging, and wireless debugging are off.
+* Confirm no unrestricted secondary users or profiles are available.
+* Acknowledge that direct-IP and app-level encrypted DNS paths are not fully handled by DNS-only mode.
+
+The child app can copy a debug bypass-risk report. Paste that report into the parent app to review the parent-visible DNS-only risk status.
+
+## Encrypted DNS Resolver Test
+
+The lab build includes a small, non-exhaustive encrypted-DNS resolver seed list for DNS-only bypass testing. Try resolving one of these sample domains while DNS-only lab mode is running:
+
+* `dns.google`
+* `cloudflare-dns.com`
+* `dns.quad9.net`
+
+Expected behavior:
+
+* Matching resolver domains are blocked through DNS-only lab handling.
+* Normal allowed DNS can still forward to the lab upstream DNS server.
+* Non-DNS traffic is not inspected or forwarded by Vordain in DNS-only mode.
+
+For stronger device hardening during tests, use Always-on VPN, Block without VPN, Settings/App Lock, Private DNS review, Developer Options/ADB off, no alternate VPN/proxy/private browsers, and no unrestricted profiles where the device supports those settings.

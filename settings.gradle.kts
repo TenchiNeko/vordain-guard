@@ -52,5 +52,6 @@ include(":features:child-status")
 include(":features:policy-editor")
 include(":features:alerts")
 include(":features:setup-checklist")
+include(":features:bypass-risk")
 
 include(":testkit")

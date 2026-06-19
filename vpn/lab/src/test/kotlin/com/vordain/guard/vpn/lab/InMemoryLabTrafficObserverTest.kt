@@ -244,6 +244,97 @@ class InMemoryLabTrafficObserverTest {
     }
 
     @Test
+    fun dnsGoogleIsBlockedAsEncryptedDnsResolver() {
+        val upstream = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload()))
+        val observer = InMemoryLabTrafficObserver(
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = upstream,
+        )
+        val packet = dnsPacketFor("dns.google")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_BLOCK_RESPONSE, result.action)
+        assertEquals(1, result.stats.encryptedDnsBlockedCount)
+        assertEquals(0, upstream.callCount)
+        assertEquals("ENCRYPTED_DNS_RESOLVER_BLOCKED_IN_LAB", result.stats.lastDnsObservation?.decisions?.single()?.reasonLabel)
+    }
+
+    @Test
+    fun cloudflareDnsAndSubdomainAreBlockedAsEncryptedDnsResolver() {
+        val observer = InMemoryLabTrafficObserver()
+
+        val exact = observer.handlePacket(dnsPacketFor("cloudflare-dns.com"), dnsPacketFor("cloudflare-dns.com").size, observedAtMillis = 1_000L)
+        val subdomain = observer.handlePacket(dnsPacketFor("security.cloudflare-dns.com"), dnsPacketFor("security.cloudflare-dns.com").size, observedAtMillis = 2_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_BLOCK_RESPONSE, exact.action)
+        assertEquals(LabPacketAction.WRITE_DNS_BLOCK_RESPONSE, subdomain.action)
+        assertEquals(2, subdomain.stats.encryptedDnsBlockedCount)
+    }
+
+    @Test
+    fun encryptedDnsSuffixTrapIsNotBlocked() {
+        val upstream = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload()))
+        val observer = InMemoryLabTrafficObserver(
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = upstream,
+        )
+        val packet = dnsPacketFor("evilcloudflare-dns.com")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_UPSTREAM_RESPONSE, result.action)
+        assertEquals(0, result.stats.encryptedDnsBlockedCount)
+        assertEquals(1, upstream.callCount)
+    }
+
+    @Test
+    fun explicitAllowDoesNotOverrideEncryptedDnsHardBlock() {
+        val upstream = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload()))
+        val observer = InMemoryLabTrafficObserver(
+            initialPolicy = policyWithAllowedDomain("dns.google"),
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = upstream,
+        )
+        val packet = dnsPacketFor("dns.google")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_BLOCK_RESPONSE, result.action)
+        assertEquals(1, result.stats.encryptedDnsBlockedCount)
+        assertEquals(0, upstream.callCount)
+    }
+
+    @Test
+    fun allowedNormalDomainStillForwardsUpstream() {
+        val upstream = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload()))
+        val observer = InMemoryLabTrafficObserver(
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = upstream,
+        )
+        val packet = dnsPacketFor("allowed.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_UPSTREAM_RESPONSE, result.action)
+        assertEquals(1, result.stats.dnsAllowedForwardedCount)
+    }
+
+    @Test
+    fun blockedPolicyDomainStillSinkholes() {
+        val observer = InMemoryLabTrafficObserver(
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload())),
+        )
+        val packet = dnsPacketFor("blocked.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_BLOCK_RESPONSE, result.action)
+        assertEquals(1, result.stats.dnsBlockedResponseCount)
+    }
+
+    @Test
     fun dnsOnlyStatsAreSeparateFromFullTunnelStats() {
         val observer = InMemoryLabTrafficObserver()
         val packet = ipv4UdpPacket(payload = byteArrayOf(1, 2, 3), sourcePort = 12_345, destinationPort = 123)
@@ -396,6 +487,19 @@ class InMemoryLabTrafficObserverTest {
             id = PolicyId("monitor-lab-policy"),
             mode = LockdownMode.MONITOR_ONLY,
             allowedDomains = emptySet<DomainName>(),
+            blockedDomains = emptySet<DomainName>(),
+            allowedPackages = emptySet<AppPackageName>(),
+            blockedPackages = emptySet<AppPackageName>(),
+            blockUnknownDomains = false,
+            blockKnownProxyDomains = false,
+        )
+    }
+
+    private fun policyWithAllowedDomain(domain: String): Policy {
+        return Policy(
+            id = PolicyId("allow-debug-policy"),
+            mode = LockdownMode.STANDARD,
+            allowedDomains = setOf(DomainName.from(domain)),
             blockedDomains = emptySet<DomainName>(),
             allowedPackages = emptySet<AppPackageName>(),
             blockedPackages = emptySet<AppPackageName>(),

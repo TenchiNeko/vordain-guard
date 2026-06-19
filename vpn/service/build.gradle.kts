@@ -23,6 +23,7 @@ kotlin {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:intelligence"))
     implementation(project(":core:policy"))
     implementation(project(":vpn:lifecycle"))
     implementation(project(":vpn:session"))

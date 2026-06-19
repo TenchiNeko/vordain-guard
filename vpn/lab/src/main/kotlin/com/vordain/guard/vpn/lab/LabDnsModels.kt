@@ -8,6 +8,7 @@ data class LabDnsDomainDecision(
     val actionLabel: String,
     val reasonLabel: String,
     val shouldCreateEvent: Boolean,
+    val categoryLabel: String? = null,
 )
 
 data class LabDnsObservation(
@@ -52,6 +53,7 @@ data class LabTrafficObservationStats(
     val dnsAlertDroppedCount: Long = 0,
     val dnsResponseWriteSuccessCount: Long = 0,
     val dnsResponseWriteFailureCount: Long = 0,
+    val encryptedDnsBlockedCount: Long = 0,
     val malformedPacketCount: Long = 0,
     val malformedDnsCount: Long = 0,
     val lastPacketSummary: String? = null,

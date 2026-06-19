@@ -33,6 +33,7 @@ dependencies {
     implementation(project(":core:status-report"))
     implementation(project(":features:child-status"))
     implementation(project(":features:setup-checklist"))
+    implementation(project(":features:bypass-risk"))
     implementation(project(":data:local"))
     implementation(project(":data:review"))
     implementation(project(":data:relay"))

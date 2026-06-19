@@ -40,6 +40,17 @@ import com.vordain.guard.core.statusreport.ChildSecurityStatusInput
 import com.vordain.guard.core.statusreport.ChildSecurityStatusReport
 import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodec
 import com.vordain.guard.data.review.ReviewRequestReason
+import com.vordain.guard.features.bypassrisk.BypassRiskCategory
+import com.vordain.guard.features.bypassrisk.BypassRiskEvaluator
+import com.vordain.guard.features.bypassrisk.BypassRiskItem
+import com.vordain.guard.features.bypassrisk.BypassRiskOverallStatus
+import com.vordain.guard.features.bypassrisk.BypassRiskSeverity
+import com.vordain.guard.features.bypassrisk.BypassRiskStatus
+import com.vordain.guard.features.bypassrisk.DebugBypassRiskReport
+import com.vordain.guard.features.bypassrisk.DebugBypassRiskReportCodec
+import com.vordain.guard.features.bypassrisk.DebugBypassRiskReportCodecResult
+import com.vordain.guard.features.bypassrisk.DnsOnlyReadinessEvaluator
+import com.vordain.guard.features.bypassrisk.DnsOnlyReadinessInput
 import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodec
 import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodecResult
 import com.vordain.guard.features.setupchecklist.HardeningEvidenceType
@@ -71,6 +82,9 @@ class ChildMainActivity : Activity() {
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
     private val childSecurityStatusEvaluator = ChildSecurityStatusEvaluator()
     private val childSecurityReportCodec = DebugChildSecurityReportCodec()
+    private val bypassRiskEvaluator = BypassRiskEvaluator()
+    private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
+    private val dnsOnlyReadinessEvaluator = DnsOnlyReadinessEvaluator()
     private lateinit var stateStore: ChildDebugStateStore
     private lateinit var statusText: TextView
     private lateinit var vpnPermissionText: TextView
@@ -79,6 +93,7 @@ class ChildMainActivity : Activity() {
     private lateinit var setupChecklistText: TextView
     private lateinit var hardeningSetupText: TextView
     private lateinit var childSecurityStatusText: TextView
+    private lateinit var bypassRiskText: TextView
     private lateinit var labCaptureText: TextView
     private lateinit var policyDomainInput: EditText
     private lateinit var policyOutputText: TextView
@@ -122,6 +137,8 @@ class ChildMainActivity : Activity() {
     private var latestHardeningSetupReportPayload: String? = null
     private var latestChildSecurityStatusReportPayload: String? = null
     private var latestChildSecurityStatusReport: ChildSecurityStatusReport? = null
+    private var latestBypassRiskReportPayload: String? = null
+    private var bypassRiskItems: List<BypassRiskItem> = emptyList()
     private var lastDiagnosticsText: String? = null
     private var policyResult: ChildDebugPolicyResult? = null
     private var policyHandoffResult: ChildDebugPolicyHandoffResult? = null
@@ -249,6 +266,74 @@ class ChildMainActivity : Activity() {
         layout.addView(button("Copy DNS-only diagnostics") {
             copyDiagnostics()
         })
+
+        layout.addView(sectionTitle("DNS bypass hardening"))
+        layout.addView(valueLabel("Turn off Android Private DNS or set it to a parent-approved provider.", textSize = 14f))
+        layout.addView(valueLabel("Remove or block alternate VPN apps.", textSize = 14f))
+        layout.addView(valueLabel("Remove or block proxy apps and private browsers.", textSize = 14f))
+        layout.addView(valueLabel("Confirm Developer Options and USB debugging are off.", textSize = 14f))
+        layout.addView(valueLabel("Confirm no unrestricted secondary users/profiles.", textSize = 14f))
+        layout.addView(valueLabel("DNS-only mode does not inspect non-DNS traffic.", textSize = 14f))
+        layout.addView(valueLabel("Vordain does not read HTTPS content.", textSize = 14f))
+        layout.addView(valueLabel("DNS-only mode cannot block every direct-IP or app-level encrypted DNS path without additional hardening.", textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION, textSize = 14f))
+        layout.addView(button("Open Private DNS / Network settings") {
+            openSettings(Settings.ACTION_WIRELESS_SETTINGS)
+        })
+        layout.addView(button("Mark Private DNS reviewed") {
+            markBypassRisk(
+                category = BypassRiskCategory.PRIVATE_DNS,
+                status = BypassRiskStatus.CONFIRMED_SAFE,
+                severity = BypassRiskSeverity.HIGH,
+                note = "Parent reviewed Android Private DNS settings.",
+            )
+        })
+        layout.addView(button("Mark no alternate VPN apps") {
+            markBypassRisk(
+                category = BypassRiskCategory.ALTERNATE_VPN_APP,
+                status = BypassRiskStatus.CONFIRMED_SAFE,
+                severity = BypassRiskSeverity.HIGH,
+                note = "Parent confirmed no alternate VPN apps are available.",
+            )
+        })
+        layout.addView(button("Mark no proxy/private browser apps") {
+            markBypassRisk(
+                category = BypassRiskCategory.PROXY_APP,
+                status = BypassRiskStatus.CONFIRMED_SAFE,
+                severity = BypassRiskSeverity.HIGH,
+                note = "Parent confirmed proxy apps are removed or blocked.",
+            )
+            markBypassRisk(
+                category = BypassRiskCategory.PRIVATE_BROWSER,
+                status = BypassRiskStatus.CONFIRMED_SAFE,
+                severity = BypassRiskSeverity.HIGH,
+                note = "Parent confirmed private browsers are removed or blocked.",
+            )
+        })
+        layout.addView(button("Mark DoH risk reviewed") {
+            markBypassRisk(
+                category = BypassRiskCategory.DNS_OVER_HTTPS,
+                status = BypassRiskStatus.CONFIRMED_SAFE,
+                severity = BypassRiskSeverity.HIGH,
+                note = "Parent reviewed DoH resolver bypass risk.",
+            )
+        })
+        layout.addView(button("Mark direct-IP limitation acknowledged") {
+            markBypassRisk(
+                category = BypassRiskCategory.DIRECT_IP_ACCESS,
+                status = BypassRiskStatus.CONFIRMED_SAFE,
+                severity = BypassRiskSeverity.MEDIUM,
+                note = "Parent acknowledged DNS-only mode does not cover direct-IP paths.",
+            )
+        })
+        layout.addView(button("Generate bypass-risk report") {
+            generateBypassRiskReport()
+        })
+        layout.addView(button("Copy bypass-risk report") {
+            copyBypassRiskReport()
+        })
+        bypassRiskText = valueLabel(createBypassRiskDisplay(), textSize = 14f)
+        layout.addView(bypassRiskText)
 
         layout.addView(sectionTitle("Setup checklist"))
         layout.addView(valueLabel("These steps help prevent silent bypass. Some settings must be turned on manually by the parent.", textSize = 14f))
@@ -813,6 +898,48 @@ class ChildMainActivity : Activity() {
         refreshDiagnosticsViews()
     }
 
+    private fun markBypassRisk(
+        category: BypassRiskCategory,
+        status: BypassRiskStatus,
+        severity: BypassRiskSeverity,
+        note: String,
+    ) {
+        val nextItem = BypassRiskItem(
+            category = category,
+            status = status,
+            severity = severity,
+            evidenceLabel = "Parent manual review",
+            note = note,
+        )
+        bypassRiskItems = (bypassRiskItems.filterNot { it.category == category } + nextItem)
+            .sortedBy { it.category.ordinal }
+        latestBypassRiskReportPayload = bypassRiskReportCodec.encode(currentBypassRiskReport())
+        saveCurrentState()
+        refreshDiagnosticsViews()
+    }
+
+    private fun generateBypassRiskReport() {
+        latestBypassRiskReportPayload = bypassRiskReportCodec.encode(currentBypassRiskReport())
+        saveCurrentState()
+        refreshDiagnosticsViews()
+    }
+
+    private fun copyBypassRiskReport() {
+        if (latestBypassRiskReportPayload.isNullOrBlank()) {
+            generateBypassRiskReport()
+        }
+        val payload = latestBypassRiskReportPayload.orEmpty()
+        if (payload.isBlank()) {
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain debug bypass-risk report", payload))
+        if (::bypassRiskText.isInitialized) {
+            bypassRiskText.text = "${createBypassRiskDisplay()}\n\nCopied bypass-risk report."
+        }
+        saveCurrentState()
+    }
+
     private fun startParentMaintenanceWindow() {
         val now = System.currentTimeMillis()
         hardeningSetupSnapshot = hardeningSetupReducer.openMaintenanceWindow(
@@ -1044,6 +1171,9 @@ class ChildMainActivity : Activity() {
                 latestChildSecurityStatusReport ?: currentChildSecurityStatusReport(),
             )
         }
+        if (::bypassRiskText.isInitialized) {
+            bypassRiskText.text = createBypassRiskDisplay()
+        }
         localEventsText.text = if (localDebugEvents.isEmpty()) {
             "No local debug events"
         } else {
@@ -1113,6 +1243,7 @@ class ChildMainActivity : Activity() {
             "DNS alert-only dropped count: ${stats.dnsAlertDroppedCount}",
             "DNS response write successes: ${stats.dnsResponseWriteSuccessCount}",
             "DNS response write failures: ${stats.dnsResponseWriteFailureCount}",
+            "Encrypted-DNS resolver blocks: ${stats.encryptedDnsBlockedCount}",
             "DNS-only packet count: ${stats.dnsOnlyLabPacketCount}",
             "DNS-only unexpected non-DNS packets: ${stats.dnsOnlyUnexpectedNonDnsCount}",
             "DNS-only blocked responses: ${stats.dnsOnlyBlockedResponseCount}",
@@ -1210,6 +1341,8 @@ class ChildMainActivity : Activity() {
 
     private fun currentChildSecurityStatusReport(): ChildSecurityStatusReport {
         val hardening = currentHardeningSetupSnapshot()
+        val bypassSummary = currentBypassRiskSummary()
+        val readiness = currentDnsOnlyReadinessResult()
         val settingsLockConfirmed = hardening.isConfirmed(HardeningSetupStep.SETTINGS_LOCK_PARENT_PIN_ONLY) ||
             hardening.isConfirmed(HardeningSetupStep.SETTINGS_APP_LOCK)
         val adbDisabledConfirmed = hardening.isConfirmed(HardeningSetupStep.USB_DEBUGGING_DISABLED) &&
@@ -1253,7 +1386,7 @@ class ChildMainActivity : Activity() {
                 heartbeatLabel = "Unknown",
                 heartbeatFresh = false,
                 setupSummaryLabel = hardening.summaryStatus.toDisplayLabel(),
-                bypassRiskLabel = hardening.latestPinCompromiseSignal.toDisplayLabel(),
+                bypassRiskLabel = "${bypassSummary.overallStatus.toDisplayLabel()} / ${readiness.status}: ${readiness.reason}",
                 labCaptureActive = labCaptureActive,
                 pinCompromiseSuspected = hardening.latestPinCompromiseSignal.suspected,
                 activeMode = activeMode,
@@ -1286,6 +1419,110 @@ class ChildMainActivity : Activity() {
         }
     }
 
+    private fun currentBypassRiskReport(): DebugBypassRiskReport {
+        return DebugBypassRiskReport(
+            childDeviceId = DeviceId(childDeviceId),
+            generatedAtMillis = System.currentTimeMillis(),
+            summary = currentBypassRiskSummary(),
+        )
+    }
+
+    private fun currentBypassRiskSummary() = bypassRiskEvaluator.summarize(currentBypassRiskItems())
+
+    private fun currentDnsOnlyReadinessResult() = dnsOnlyReadinessEvaluator.evaluate(
+        DnsOnlyReadinessInput(
+            vpnPermissionConfirmed = vpnPermissionStatus == ChildVpnSmokeLabels.PERMISSION_GRANTED ||
+                currentHardeningSetupSnapshot().isConfirmed(HardeningSetupStep.VPN_PERMISSION),
+            alwaysOnVpnConfirmed = currentHardeningSetupSnapshot().isConfirmed(HardeningSetupStep.VPN_ALWAYS_ON),
+            blockWithoutVpnConfirmed = currentHardeningSetupSnapshot().isConfirmed(HardeningSetupStep.BLOCK_WITHOUT_VPN),
+            settingsLockConfirmed = currentHardeningSetupSnapshot().isConfirmed(HardeningSetupStep.SETTINGS_APP_LOCK) ||
+                currentHardeningSetupSnapshot().isConfirmed(HardeningSetupStep.SETTINGS_LOCK_PARENT_PIN_ONLY),
+            pinCompromiseSuspected = currentHardeningSetupSnapshot().latestPinCompromiseSignal.suspected,
+            activePolicyVersion = currentPolicyVersion.takeIf { currentPolicySource.startsWith("Verified") },
+            dnsOnlyLabAvailable = true,
+            localLabOnlyMode = true,
+            bypassRiskSummary = currentBypassRiskSummary(),
+        ),
+    )
+
+    private fun currentBypassRiskItems(): List<BypassRiskItem> {
+        val manualItems = bypassRiskItems.associateBy { it.category }
+        val hardening = currentHardeningSetupSnapshot()
+        val merged = defaultBypassRiskItems().associateBy { it.category }.toMutableMap()
+        merged += manualItems
+        merged[BypassRiskCategory.DEVELOPER_OPTIONS] = hardeningRiskItem(
+            category = BypassRiskCategory.DEVELOPER_OPTIONS,
+            confirmed = hardening.isConfirmed(HardeningSetupStep.DEVELOPER_OPTIONS_DISABLED),
+            severity = BypassRiskSeverity.HIGH,
+            note = "Developer Options disabled check.",
+        )
+        merged[BypassRiskCategory.USB_DEBUGGING] = hardeningRiskItem(
+            category = BypassRiskCategory.USB_DEBUGGING,
+            confirmed = hardening.isConfirmed(HardeningSetupStep.USB_DEBUGGING_DISABLED),
+            severity = BypassRiskSeverity.HIGH,
+            note = "USB debugging disabled check.",
+        )
+        merged[BypassRiskCategory.WIRELESS_DEBUGGING] = hardeningRiskItem(
+            category = BypassRiskCategory.WIRELESS_DEBUGGING,
+            confirmed = hardening.isConfirmed(HardeningSetupStep.WIRELESS_DEBUGGING_DISABLED),
+            severity = BypassRiskSeverity.HIGH,
+            note = "Wireless debugging disabled check.",
+        )
+        merged[BypassRiskCategory.UNRESTRICTED_PROFILE] = hardeningRiskItem(
+            category = BypassRiskCategory.UNRESTRICTED_PROFILE,
+            confirmed = hardening.isConfirmed(HardeningSetupStep.NO_UNRESTRICTED_SECONDARY_USERS) &&
+                hardening.isConfirmed(HardeningSetupStep.NO_UNRESTRICTED_WORK_PROFILE),
+            severity = BypassRiskSeverity.HIGH,
+            note = "Secondary user/profile review.",
+        )
+        return merged.values.sortedBy { it.category.ordinal }
+    }
+
+    private fun hardeningRiskItem(
+        category: BypassRiskCategory,
+        confirmed: Boolean,
+        severity: BypassRiskSeverity,
+        note: String,
+    ): BypassRiskItem {
+        return BypassRiskItem(
+            category = category,
+            status = if (confirmed) BypassRiskStatus.CONFIRMED_SAFE else BypassRiskStatus.NOT_CHECKED,
+            severity = severity,
+            evidenceLabel = if (confirmed) "Parent confirmation" else "Manual review needed",
+            note = note,
+        )
+    }
+
+    private fun defaultBypassRiskItems(): List<BypassRiskItem> {
+        return listOf(
+            BypassRiskItem(BypassRiskCategory.DNS_OVER_HTTPS, BypassRiskStatus.NOT_CHECKED, BypassRiskSeverity.HIGH, "Manual review needed", "Review DoH resolver app/browser settings."),
+            BypassRiskItem(BypassRiskCategory.PRIVATE_DNS, BypassRiskStatus.NOT_CHECKED, BypassRiskSeverity.HIGH, "Manual review needed", "Review Android Private DNS settings."),
+            BypassRiskItem(BypassRiskCategory.ALTERNATE_VPN_APP, BypassRiskStatus.NOT_CHECKED, BypassRiskSeverity.HIGH, "Manual review needed", "Review alternate VPN apps."),
+            BypassRiskItem(BypassRiskCategory.PROXY_APP, BypassRiskStatus.NOT_CHECKED, BypassRiskSeverity.HIGH, "Manual review needed", "Review proxy apps."),
+            BypassRiskItem(BypassRiskCategory.PRIVATE_BROWSER, BypassRiskStatus.NOT_CHECKED, BypassRiskSeverity.HIGH, "Manual review needed", "Review private browsers."),
+            BypassRiskItem(BypassRiskCategory.DEVELOPER_OPTIONS, BypassRiskStatus.NOT_CHECKED, BypassRiskSeverity.HIGH, "Manual review needed", "Confirm Developer Options are off."),
+            BypassRiskItem(BypassRiskCategory.USB_DEBUGGING, BypassRiskStatus.NOT_CHECKED, BypassRiskSeverity.HIGH, "Manual review needed", "Confirm USB debugging is off."),
+            BypassRiskItem(BypassRiskCategory.WIRELESS_DEBUGGING, BypassRiskStatus.NOT_CHECKED, BypassRiskSeverity.HIGH, "Manual review needed", "Confirm wireless debugging is off."),
+            BypassRiskItem(BypassRiskCategory.UNRESTRICTED_PROFILE, BypassRiskStatus.NOT_CHECKED, BypassRiskSeverity.HIGH, "Manual review needed", "Review secondary users and profiles."),
+            BypassRiskItem(BypassRiskCategory.DIRECT_IP_ACCESS, BypassRiskStatus.NEEDS_REVIEW, BypassRiskSeverity.MEDIUM, "Limitation notice", "DNS-only mode cannot cover every direct-IP path."),
+        )
+    }
+
+    private fun createBypassRiskDisplay(): String {
+        val summary = currentBypassRiskSummary()
+        val readiness = currentDnsOnlyReadinessResult()
+        return buildString {
+            append("Bypass risk status: ${summary.overallStatus.toDisplayLabel()}\n")
+            append("Highest severity: ${summary.highestSeverity}\n")
+            append("DNS-only readiness: ${readiness.status} - ${readiness.reason}\n")
+            append(summary.warningText)
+            append('\n')
+            currentBypassRiskItems().forEach { item ->
+                append("${item.category.toDisplayLabel()}: ${item.status.toDisplayLabel()} / ${item.severity} / ${item.evidenceLabel} / ${item.note}\n")
+            }
+        }.trimEnd()
+    }
+
     private fun restoreState(snapshot: ChildDebugStateSnapshot) {
         childDeviceId = snapshot.childDeviceId.ifBlank { ChildDebugStateSnapshot.DEFAULT_CHILD_DEVICE_ID }
         latestPolicyPayload = snapshot.latestPolicyPayload
@@ -1308,6 +1545,8 @@ class ChildMainActivity : Activity() {
         acceptedParentSummary = snapshot.acceptedParentSummary
         latestHardeningSetupReportPayload = snapshot.latestHardeningSetupReportPayload
         latestChildSecurityStatusReportPayload = snapshot.latestChildSecurityStatusReportPayload
+        latestBypassRiskReportPayload = snapshot.latestBypassRiskReportPayload
+        bypassRiskItems = restoreBypassRiskItems(snapshot.latestBypassRiskReportPayload)
         hardeningSetupSnapshot = restoreHardeningSetupSnapshot(snapshot.latestHardeningSetupReportPayload)
         latestChildSecurityStatusReport = restoreChildSecurityStatusReport(snapshot.latestChildSecurityStatusReportPayload)
         syncLegacySetupStateFromHardening()
@@ -1390,6 +1629,7 @@ class ChildMainActivity : Activity() {
                 acceptedParentSummary = acceptedParentSummary,
                 latestHardeningSetupReportPayload = latestHardeningSetupReportPayload,
                 latestChildSecurityStatusReportPayload = latestChildSecurityStatusReportPayload,
+                latestBypassRiskReportPayload = latestBypassRiskReportPayload,
             ),
         )
     }
@@ -1432,6 +1672,19 @@ class ChildMainActivity : Activity() {
             is com.vordain.guard.core.statusreport.DebugChildSecurityReportCodecResult.Rejected -> {
                 latestChildSecurityStatusReportPayload = null
                 null
+            }
+        }
+    }
+
+    private fun restoreBypassRiskItems(payload: String?): List<BypassRiskItem> {
+        if (payload.isNullOrBlank()) {
+            return emptyList()
+        }
+        return when (val result = bypassRiskReportCodec.decode(payload)) {
+            is DebugBypassRiskReportCodecResult.Decoded -> result.report.summary.items
+            is DebugBypassRiskReportCodecResult.Rejected -> {
+                latestBypassRiskReportPayload = null
+                emptyList()
             }
         }
     }
@@ -1560,6 +1813,43 @@ class ChildMainActivity : Activity() {
             ChildSecurityActiveMode.NONE -> "None"
             ChildSecurityActiveMode.DNS_ONLY_LAB -> "DNS-only lab active"
             ChildSecurityActiveMode.FULL_TUNNEL_LAB -> "Full-tunnel lab active"
+        }
+    }
+
+    private fun BypassRiskOverallStatus.toDisplayLabel(): String {
+        return when (this) {
+            BypassRiskOverallStatus.NOT_REVIEWED -> "Unknown"
+            BypassRiskOverallStatus.READY_FOR_DNS_LAB -> "Ready for DNS lab"
+            BypassRiskOverallStatus.NEEDS_ATTENTION -> "Needs attention"
+            BypassRiskOverallStatus.HIGH_RISK -> "Needs attention - high risk"
+            BypassRiskOverallStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun BypassRiskStatus.toDisplayLabel(): String {
+        return when (this) {
+            BypassRiskStatus.NOT_CHECKED -> "Unknown"
+            BypassRiskStatus.NEEDS_REVIEW -> "Needs attention"
+            BypassRiskStatus.CONFIRMED_SAFE -> "Confirmed"
+            BypassRiskStatus.RISK_FOUND -> "Needs attention"
+            BypassRiskStatus.NOT_SUPPORTED -> "Not supported"
+            BypassRiskStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun BypassRiskCategory.toDisplayLabel(): String {
+        return when (this) {
+            BypassRiskCategory.DNS_OVER_HTTPS -> "DoH resolver risk"
+            BypassRiskCategory.PRIVATE_DNS -> "Private DNS"
+            BypassRiskCategory.ALTERNATE_VPN_APP -> "Alternate VPN app"
+            BypassRiskCategory.PROXY_APP -> "Proxy app"
+            BypassRiskCategory.PRIVATE_BROWSER -> "Private browser"
+            BypassRiskCategory.DEVELOPER_OPTIONS -> "Developer Options"
+            BypassRiskCategory.USB_DEBUGGING -> "USB debugging"
+            BypassRiskCategory.WIRELESS_DEBUGGING -> "Wireless debugging"
+            BypassRiskCategory.UNRESTRICTED_PROFILE -> "Unrestricted profile"
+            BypassRiskCategory.DIRECT_IP_ACCESS -> "Direct-IP limitation"
+            BypassRiskCategory.UNKNOWN -> "Unknown"
         }
     }
 
