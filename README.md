@@ -12,7 +12,7 @@ The first product promise for Vordain Guard Basic is:
 No silent bypass.
 ```
 
-Vordain Basic is bypass-resistant, not unbypassable. It is designed to make protection state visible, enforce local policy while protection is active, and alert parents quickly if protection is disabled, degraded, or no longer confirmed.
+Vordain Basic is bypass-resistant, but it is not full protection. It is designed to make DNS Guard state visible, enforce local policy while Basic DNS Guard is active, and alert parents quickly if DNS Guard is stopped, stale, degraded, or no longer confirmed.
 
 The product loop is:
 
@@ -25,13 +25,13 @@ Policy -> Enforcement -> Event -> Encrypted Alert
 Vordain Basic is the first market-validation product:
 
 - Android-first
-- VPN/domain filtering
-- Proxy/anonymizer blocking
+- Basic DNS Guard local MVP
+- Proxy/anonymizer blocking through DNS policy
 - Local cached policy enforcement
 - VPN stopped detection
-- Heartbeat/dead-man protection status
-- Parent alerts
-- Clear status: Protected, Degraded, Stopped, Unknown
+- Heartbeat freshness status
+- Local parent-visible alerts
+- Clear status: Ready for DNS Guard, Needs attention, Stopped, Unknown
 
 Vordain Managed is a future premium tier:
 
@@ -43,16 +43,16 @@ Vordain Managed is a future premium tier:
 
 Detection and transparency come first. Managed enforcement comes later.
 
-## Protection States
+## Local MVP States
 
-Protected means actually protected:
+Ready for DNS Guard means setup is confirmed enough for local DNS-only testing:
 
-- VPN active
+- VPN permission confirmed
 - Local policy loaded
-- Heartbeat fresh
-- Protection is currently confirmed
+- Heartbeat fresh when Basic DNS Guard is running
+- Required hardening checks parent-confirmed
 
-Degraded means protection is weakened:
+Needs attention means the setup is weakened:
 
 - VPN active but setup incomplete
 - Policy stale
@@ -60,33 +60,33 @@ Degraded means protection is weakened:
 - Fail-closed setting not enabled
 - Another weakening condition exists
 
-Stopped means protection is known to have stopped:
+Stopped means Basic DNS Guard is known to have stopped:
 
 - VPN revoked
 - App disabled
-- Protection explicitly stopped
+- Basic DNS Guard explicitly stopped
 - Local tamper detected
 
-Unknown means protection is no longer confirmed:
+Unknown means Basic DNS Guard is no longer confirmed:
 
 - Heartbeat missing
 - Child device stopped reporting
-- Parent should not assume protection is active
+- Parent should not assume DNS Guard is active
 
 ## Alert Paths
 
 Confirmed stopped alert:
 
 - The child app detects VPN disabled or revoked while still alive.
-- It sends a parent alert immediately when possible.
+- It records a local child alert and exports a parent-visible debug report by copy/share for now.
 
 Dead-man heartbeat alert:
 
-- The child device periodically proves protection is active.
-- If check-ins stop, backend or parent-side state marks protection Unknown or Stopped.
-- Parents are told that protection is no longer confirmed.
+- The child device tracks a foreground-service heartbeat while Basic DNS Guard is running.
+- If heartbeat becomes stale or missing, local status marks Basic DNS Guard stale, missing, Unknown, or Stopped.
+- Parents can import the child alert/status report and see that DNS Guard is no longer confirmed.
 
-If protection stops, parents are told. If the device stops reporting, parents are told that protection is no longer confirmed.
+If Basic DNS Guard stops, the local alert center records it. If the device stops reporting, parent-visible status should be treated as Unknown until the child report is refreshed.
 
 ## Current Architecture Status
 
@@ -128,11 +128,11 @@ Vordain Guard v1 includes the architecture for:
 - Security event creation
 - Heartbeat/protection state evaluation
 - Local event queue
-- Encrypted relay and outbox contracts
+- Encrypted relay and outbox contracts for future production sync
 - App-aware Compatibility Mode contracts
 - Parent-initiated review request contracts
 - Subscription entitlement contracts
-- Parent-child encrypted alert architecture
+- Parent-child local alert architecture with future encrypted alert contracts
 - VPN stopped/tamper event model
 - Setup checklist architecture
 

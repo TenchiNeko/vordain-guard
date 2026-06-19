@@ -6,6 +6,7 @@ import android.os.IBinder
 import com.vordain.guard.vpn.session.LabCaptureWatchdog
 import com.vordain.guard.vpn.session.LabCaptureWatchdogConfig
 import com.vordain.guard.vpn.session.LabCaptureWatchdogState
+import com.vordain.guard.vpn.session.VordainOperatingMode
 import com.vordain.guard.vpn.session.VpnTunnelSpec
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -17,6 +18,8 @@ class VordainVpnService : VpnService() {
     @Volatile
     private var labWatchdogState: LabCaptureWatchdogState = LabCaptureWatchdogState.inactive()
     private var labWatchdogThread: Thread? = null
+    private val basicDnsHeartbeatRunning = AtomicBoolean(false)
+    private var basicDnsHeartbeatThread: Thread? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -150,8 +153,10 @@ class VordainVpnService : VpnService() {
                             ServiceLabCaptureMode.NONE -> "lab auto-stop watchdog active"
                         },
                     )
+                    startBasicDnsHeartbeat(labCaptureMode)
                 } else {
                     stopLabWatchdog("normal shell established")
+                    stopBasicDnsHeartbeat("Heartbeat stopped")
                 }
                 sessionSink.onVpnStarted()
                 lifecycleSink.onVpnStarted()
@@ -167,6 +172,7 @@ class VordainVpnService : VpnService() {
 
     private fun closeTunnel() {
         stopLabWatchdog("lab capture stopped")
+        stopBasicDnsHeartbeat("Heartbeat stopped")
         captureLoop?.stop()
         captureLoop = null
         tunnelHandle?.close()
@@ -220,6 +226,50 @@ class VordainVpnService : VpnService() {
         LabCaptureDebugStatus.updateWatchdogState(labWatchdogState)
     }
 
+    private fun startBasicDnsHeartbeat(labCaptureMode: ServiceLabCaptureMode) {
+        val mode = when (labCaptureMode) {
+            ServiceLabCaptureMode.BASIC_DNS_GUARD -> VordainOperatingMode.BASIC_DNS_GUARD
+            ServiceLabCaptureMode.DNS_ONLY -> VordainOperatingMode.DNS_ONLY_LAB
+            else -> {
+                stopBasicDnsHeartbeat("Heartbeat stopped")
+                return
+            }
+        }
+        BasicDnsGuardHeartbeatDebugStatus.start(
+            mode = mode,
+            currentTimeMillis = System.currentTimeMillis(),
+        )
+        if (!basicDnsHeartbeatRunning.compareAndSet(false, true)) {
+            return
+        }
+        basicDnsHeartbeatThread = Thread({
+            while (basicDnsHeartbeatRunning.get()) {
+                try {
+                    Thread.sleep(BASIC_DNS_HEARTBEAT_INTERVAL_MILLIS)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+                if (basicDnsHeartbeatRunning.get()) {
+                    BasicDnsGuardHeartbeatDebugStatus.tick(System.currentTimeMillis())
+                }
+            }
+        }, "VordainBasicDnsHeartbeat").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun stopBasicDnsHeartbeat(reason: String) {
+        if (basicDnsHeartbeatRunning.getAndSet(false)) {
+            val thread = basicDnsHeartbeatThread
+            if (thread != null && thread != Thread.currentThread()) {
+                thread.interrupt()
+            }
+            basicDnsHeartbeatThread = null
+        }
+        BasicDnsGuardHeartbeatDebugStatus.stop(reason)
+    }
+
     companion object {
         var lifecycleSink: VpnLifecycleSink = VpnLifecycleSink.NoOp
         var sessionSink: VpnSessionSink = DefaultServiceVpnSessionSinkFactory.create()
@@ -228,6 +278,7 @@ class VordainVpnService : VpnService() {
         val DNS_ONLY_LAB_WATCHDOG_CONFIG = LabCaptureWatchdogConfig(
             maxSessionMillis = 30L * 60L * 1_000L,
         )
+        private const val BASIC_DNS_HEARTBEAT_INTERVAL_MILLIS = 15_000L
     }
 }
 

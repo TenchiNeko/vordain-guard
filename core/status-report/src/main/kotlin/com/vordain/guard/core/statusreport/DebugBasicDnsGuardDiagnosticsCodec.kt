@@ -24,6 +24,11 @@ class DebugBasicDnsGuardDiagnosticsCodec {
             "dnsAllowedForwardedCount=${report.dnsAllowedForwardedCount}",
             "encryptedDnsBlockedCount=${report.encryptedDnsBlockedCount}",
             "dnsFailureCount=${report.dnsFailureCount}",
+            "activeCriticalAlertCount=${report.activeCriticalAlertCount}",
+            "latestAlertSeverity=${report.latestAlertSeverity.orEmpty()}",
+            "heartbeatStatusLabel=${report.heartbeatStatusLabel.orEmpty()}",
+            "lastHeartbeatAtMillis=${report.lastHeartbeatAtMillis ?: ""}",
+            "alertSummaryLabel=${report.alertSummaryLabel.orEmpty()}",
             "warning=${report.warningText}",
         ).joinToString(separator = "\n")
     }
@@ -73,6 +78,11 @@ class DebugBasicDnsGuardDiagnosticsCodec {
                 dnsAllowedForwardedCount = values["dnsAllowedForwardedCount"]?.toLongOrNull() ?: 0,
                 encryptedDnsBlockedCount = values["encryptedDnsBlockedCount"]?.toLongOrNull() ?: 0,
                 dnsFailureCount = values["dnsFailureCount"]?.toLongOrNull() ?: 0,
+                activeCriticalAlertCount = values["activeCriticalAlertCount"]?.toIntOrNull() ?: 0,
+                latestAlertSeverity = values["latestAlertSeverity"]?.takeIf(String::isNotBlank),
+                heartbeatStatusLabel = values["heartbeatStatusLabel"]?.takeIf(String::isNotBlank),
+                lastHeartbeatAtMillis = values["lastHeartbeatAtMillis"]?.toLongOrNull(),
+                alertSummaryLabel = values["alertSummaryLabel"]?.takeIf(String::isNotBlank),
                 warningText = values["warning"]?.takeIf(String::isNotBlank)
                     ?: BasicDnsGuardDiagnosticsReport.WARNING_TEXT,
             ),

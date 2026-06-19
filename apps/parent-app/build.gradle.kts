@@ -27,6 +27,7 @@ kotlin {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:alert-center"))
     implementation(project(":core:audit-log"))
     implementation(project(":core:intelligence"))
     implementation(project(":core:pairing"))

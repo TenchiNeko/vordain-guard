@@ -29,6 +29,11 @@ class DebugChildSecurityReportCodec {
             "dnsBlockedResponseCount=${report.dnsBlockedResponseCount}",
             "dnsAllowedForwardedCount=${report.dnsAllowedForwardedCount}",
             "dnsAllowedForwardFailureCount=${report.dnsAllowedForwardFailureCount}",
+            "activeCriticalAlertCount=${report.activeCriticalAlertCount}",
+            "latestAlertSeverity=${report.latestAlertSeverity.orEmpty()}",
+            "heartbeatStatusLabel=${report.heartbeatStatusLabel.orEmpty()}",
+            "lastHeartbeatAtMillis=${report.lastHeartbeatAtMillis ?: ""}",
+            "alertSummaryLabel=${report.alertSummaryLabel.orEmpty()}",
             "signals=${report.signals.map(ChildSecuritySignal::name).sorted().joinToString(separator = ",")}",
             "warning=${report.warningText}",
         ).joinToString(separator = "\n")
@@ -94,6 +99,11 @@ class DebugChildSecurityReportCodec {
                 dnsBlockedResponseCount = values["dnsBlockedResponseCount"]?.toLongOrNull() ?: 0,
                 dnsAllowedForwardedCount = values["dnsAllowedForwardedCount"]?.toLongOrNull() ?: 0,
                 dnsAllowedForwardFailureCount = values["dnsAllowedForwardFailureCount"]?.toLongOrNull() ?: 0,
+                activeCriticalAlertCount = values["activeCriticalAlertCount"]?.toIntOrNull() ?: 0,
+                latestAlertSeverity = values["latestAlertSeverity"]?.takeIf(String::isNotBlank),
+                heartbeatStatusLabel = values["heartbeatStatusLabel"]?.takeIf(String::isNotBlank),
+                lastHeartbeatAtMillis = values["lastHeartbeatAtMillis"]?.toLongOrNull(),
+                alertSummaryLabel = values["alertSummaryLabel"]?.takeIf(String::isNotBlank),
                 warningText = values["warning"]?.takeIf(String::isNotBlank)
                     ?: ChildSecurityStatusReport.WARNING_TEXT,
             ),

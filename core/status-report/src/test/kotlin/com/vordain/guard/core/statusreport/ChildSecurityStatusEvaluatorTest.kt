@@ -84,6 +84,11 @@ class ChildSecurityStatusEvaluatorTest {
                 proxyBlockingEnabled = true,
                 policyAllowDomainCount = 2,
                 policyBlockDomainCount = 3,
+                activeCriticalAlertCount = 1,
+                latestAlertSeverity = "CRITICAL",
+                heartbeatStatusLabel = "Heartbeat fresh",
+                lastHeartbeatAtMillis = 456L,
+                alertSummaryLabel = "1 active critical alert(s)",
             ),
         )
 
@@ -104,6 +109,11 @@ class ChildSecurityStatusEvaluatorTest {
         assertTrue(decoded.report.proxyBlockingEnabled)
         assertEquals(2, decoded.report.policyAllowDomainCount)
         assertEquals(3, decoded.report.policyBlockDomainCount)
+        assertEquals(1, decoded.report.activeCriticalAlertCount)
+        assertEquals("CRITICAL", decoded.report.latestAlertSeverity)
+        assertEquals("Heartbeat fresh", decoded.report.heartbeatStatusLabel)
+        assertEquals(456L, decoded.report.lastHeartbeatAtMillis)
+        assertEquals("1 active critical alert(s)", decoded.report.alertSummaryLabel)
     }
 
     @Test
@@ -163,6 +173,11 @@ class ChildSecurityStatusEvaluatorTest {
             dnsAllowedForwardedCount = 3,
             encryptedDnsBlockedCount = 4,
             dnsFailureCount = 5,
+            activeCriticalAlertCount = 1,
+            latestAlertSeverity = "HIGH",
+            heartbeatStatusLabel = "Heartbeat fresh",
+            lastHeartbeatAtMillis = 456L,
+            alertSummaryLabel = "1 active alert(s)",
         )
 
         val decoded = diagnosticsCodec.decode(diagnosticsCodec.encode(report))
@@ -283,6 +298,11 @@ class ChildSecurityStatusEvaluatorTest {
         proxyBlockingEnabled: Boolean = true,
         policyAllowDomainCount: Int = 0,
         policyBlockDomainCount: Int = 0,
+        activeCriticalAlertCount: Int = 0,
+        latestAlertSeverity: String? = null,
+        heartbeatStatusLabel: String? = null,
+        lastHeartbeatAtMillis: Long? = null,
+        alertSummaryLabel: String? = null,
     ): ChildSecurityStatusInput {
         return ChildSecurityStatusInput(
             childDeviceId = DeviceId("child-debug-device"),
@@ -315,6 +335,11 @@ class ChildSecurityStatusEvaluatorTest {
             proxyBlockingEnabled = proxyBlockingEnabled,
             policyAllowDomainCount = policyAllowDomainCount,
             policyBlockDomainCount = policyBlockDomainCount,
+            activeCriticalAlertCount = activeCriticalAlertCount,
+            latestAlertSeverity = latestAlertSeverity,
+            heartbeatStatusLabel = heartbeatStatusLabel,
+            lastHeartbeatAtMillis = lastHeartbeatAtMillis,
+            alertSummaryLabel = alertSummaryLabel,
         )
     }
 

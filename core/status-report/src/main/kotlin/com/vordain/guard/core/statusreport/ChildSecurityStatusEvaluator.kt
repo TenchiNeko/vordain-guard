@@ -37,6 +37,11 @@ class ChildSecurityStatusEvaluator {
             dnsBlockedResponseCount = input.dnsBlockedResponseCount,
             dnsAllowedForwardedCount = input.dnsAllowedForwardedCount,
             dnsAllowedForwardFailureCount = input.dnsAllowedForwardFailureCount,
+            activeCriticalAlertCount = input.activeCriticalAlertCount,
+            latestAlertSeverity = input.latestAlertSeverity?.takeIf(String::isNotBlank),
+            heartbeatStatusLabel = input.heartbeatStatusLabel?.takeIf(String::isNotBlank),
+            lastHeartbeatAtMillis = input.lastHeartbeatAtMillis,
+            alertSummaryLabel = input.alertSummaryLabel?.takeIf(String::isNotBlank),
         )
     }
 

@@ -40,7 +40,8 @@ tools/export_debug_apks.sh --skip-build
 7. Test an allowed site.
 8. Test a blocked domain from the sample or debug policy.
 9. Return to the child app and review Basic DNS Guard counters, readiness, active policy, and audit timeline.
-10. Stop Basic DNS Guard.
+10. Review heartbeat status and local alerts.
+11. Stop Basic DNS Guard.
 
 Expected behavior:
 
@@ -52,6 +53,22 @@ Expected behavior:
 * This does not block every DoH, direct-IP, cached DNS, or app-level encrypted DNS path without additional hardening.
 * Filtering is not production-enabled yet.
 * This is not full protection.
+
+## Local Alerts And Heartbeat
+
+The child app includes a local "No silent bypass" alert center for explicit app/security events.
+
+To test it:
+
+1. Start Basic DNS Guard.
+2. Confirm the child dashboard shows heartbeat fresh while the service is running.
+3. Stop Basic DNS Guard and confirm a local stopped alert is added.
+4. Use the debug stale-heartbeat simulation button to verify a critical alert appears.
+5. Copy or share the child alert report.
+6. Paste the report into the parent app's Child alerts section.
+7. Confirm the parent view shows active critical alerts, latest severity, and policy version when present.
+
+Alerts are local/debug copy-paste reports for now. Production alerts will use encrypted relay later. Vordain does not record PINs or account secrets, and alert reports do not include DNS observations, packet bytes, web history, or message contents.
 
 ## DNS-Only Lab Test
 
@@ -136,6 +153,8 @@ If the stored policy payload fails verification, the child app falls back to the
 ## Reports, Sharing, and Local History
 
 The child app can copy or share local debug setup, bypass-risk, child status, diagnostics, active policy diagnostics, and audit summaries. The parent app can import child reports and keeps a bounded local report history for generated policy payloads, pairing payloads, setup reports, bypass-risk reports, and child status reports.
+
+The child app can also copy/share a local alert report. The parent app can import child alert reports and keeps them in the same bounded local report history.
 
 The local audit timeline records explicit app actions such as starting DNS-only lab, applying a policy payload, generating reports, and copying diagnostics. It is not a passive monitor.
 

@@ -14,6 +14,11 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.vordain.guard.core.alertcenter.AlertStatus
+import com.vordain.guard.core.alertcenter.AlertSeverity
+import com.vordain.guard.core.alertcenter.DebugChildAlertReport
+import com.vordain.guard.core.alertcenter.DebugChildAlertReportCodec
+import com.vordain.guard.core.alertcenter.DebugChildAlertReportCodecResult
 import com.vordain.guard.core.auditlog.VordainDebugPayloadEnvelope
 import com.vordain.guard.core.auditlog.VordainDebugPayloadEnvelopeCodec
 import com.vordain.guard.core.auditlog.VordainDebugPayloadKind
@@ -70,6 +75,7 @@ class ParentMainActivity : Activity() {
     private val pairingEvaluator = PairingEvaluator()
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
     private val childSecurityReportCodec = DebugChildSecurityReportCodec()
+    private val childAlertReportCodec = DebugChildAlertReportCodec()
     private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
     private val debugPayloadEnvelopeCodec = VordainDebugPayloadEnvelopeCodec()
     private val policyPresetFactory = PolicyPresetFactory()
@@ -101,6 +107,8 @@ class ParentMainActivity : Activity() {
     private lateinit var childSecurityReportInput: EditText
     private lateinit var childSecurityReportOutput: TextView
     private lateinit var childDnsGuardStatusOutput: TextView
+    private lateinit var childAlertReportInput: EditText
+    private lateinit var childAlertReportOutput: TextView
     private lateinit var bypassRiskReportInput: EditText
     private lateinit var bypassRiskReportOutput: TextView
     private lateinit var reportHistoryOutput: TextView
@@ -112,6 +120,8 @@ class ParentMainActivity : Activity() {
     private var decodedHardeningSetupReport: HardeningSetupSnapshot? = null
     private var lastChildSecurityStatusReportPayload: String = ""
     private var decodedChildSecurityStatusReport: ChildSecurityStatusReport? = null
+    private var lastChildAlertReportPayload: String = ""
+    private var decodedChildAlertReport: DebugChildAlertReport? = null
     private var lastBypassRiskReportPayload: String = ""
     private var decodedBypassRiskReport: DebugBypassRiskReport? = null
     private var selectedPolicyPreset: PolicyPreset = PolicyPreset.BASIC_DNS_GUARD
@@ -158,6 +168,7 @@ class ParentMainActivity : Activity() {
         acceptedChildSummary = snapshot.acceptedChildSummary
         lastHardeningSetupReportPayload = snapshot.latestHardeningSetupReportPayload.orEmpty()
         lastChildSecurityStatusReportPayload = snapshot.latestChildSecurityStatusReportPayload.orEmpty()
+        lastChildAlertReportPayload = snapshot.latestChildAlertReportPayload.orEmpty()
         lastBypassRiskReportPayload = snapshot.latestBypassRiskReportPayload.orEmpty()
         selectedPolicyPreset = snapshot.selectedPolicyPreset.toPolicyPreset()
         pairingSessionInput = editText(snapshot.pairingSessionId)
@@ -168,6 +179,7 @@ class ParentMainActivity : Activity() {
         childAcceptanceInput = editText(lastPairingAcceptancePayload)
         setupReportInput = editText(lastHardeningSetupReportPayload)
         childSecurityReportInput = editText(lastChildSecurityStatusReportPayload)
+        childAlertReportInput = editText(lastChildAlertReportPayload)
         bypassRiskReportInput = editText(lastBypassRiskReportPayload)
         targetDeviceInput = editText(snapshot.targetChildDeviceId)
         policyVersionInput = editText(snapshot.policyVersion)
@@ -305,6 +317,26 @@ class ParentMainActivity : Activity() {
         })
         childSecurityReportOutput = valueLabel(createChildSecurityStatusOutput(), 14f)
         layout.addView(childSecurityReportOutput)
+
+        layout.addView(sectionTitle("Child alerts"))
+        layout.addView(valueLabel("Debug/local report import only.", 14f))
+        layout.addView(valueLabel("Production alerts will use encrypted relay later.", 14f))
+        layout.addView(valueLabel("Vordain does not receive PINs or account secrets.", 14f))
+        layout.addView(labeledField("Paste child alert report", childAlertReportInput))
+        layout.addView(button("Import child alert report") {
+            decodeChildAlertReport()
+        })
+        layout.addView(button("Copy latest imported alert report") {
+            copyLatestChildAlertReport()
+        })
+        layout.addView(button("Clear local alert report history") {
+            clearChildAlertReportHistory()
+        })
+        layout.addView(button("Share latest imported alert summary") {
+            shareLatestChildAlertSummary()
+        })
+        childAlertReportOutput = valueLabel(createChildAlertReportOutput(), 14f)
+        layout.addView(childAlertReportOutput)
 
         layout.addView(sectionTitle("DNS-only bypass risk"))
         layout.addView(valueLabel("DNS-only filtering is not full protection.", 14f))
@@ -527,6 +559,7 @@ class ParentMainActivity : Activity() {
             latestHardeningSetupReportPayload = lastHardeningSetupReportPayload.takeIf(String::isNotBlank),
             latestChildSecurityStatusReportPayload = lastChildSecurityStatusReportPayload.takeIf(String::isNotBlank),
             latestBypassRiskReportPayload = lastBypassRiskReportPayload.takeIf(String::isNotBlank),
+            latestChildAlertReportPayload = lastChildAlertReportPayload.takeIf(String::isNotBlank),
         )
     }
 
@@ -637,6 +670,81 @@ class ParentMainActivity : Activity() {
         stateStore.save(createSnapshot())
     }
 
+    private fun decodeChildAlertReport() {
+        lastChildAlertReportPayload = childAlertReportInput.text.toString()
+        childAlertReportOutput.text = when (val result = childAlertReportCodec.decode(lastChildAlertReportPayload)) {
+            is DebugChildAlertReportCodecResult.Decoded -> {
+                decodedChildAlertReport = result.report
+                appendReportHistory(
+                    type = "CHILD_ALERT_REPORT",
+                    title = "Child alert report",
+                    payload = lastChildAlertReportPayload,
+                )
+                createChildAlertReportOutput()
+            }
+            is DebugChildAlertReportCodecResult.Rejected -> {
+                decodedChildAlertReport = null
+                "Child alert report rejected: ${result.reason}"
+            }
+        }
+        stateStore.save(createSnapshot())
+    }
+
+    private fun copyLatestChildAlertReport() {
+        if (lastChildAlertReportPayload.isBlank()) {
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain child alert report", lastChildAlertReportPayload))
+        childAlertReportOutput.text = "${createChildAlertReportOutput()}\n\nCopied latest imported alert report."
+    }
+
+    private fun clearChildAlertReportHistory() {
+        lastChildAlertReportPayload = ""
+        decodedChildAlertReport = null
+        childAlertReportInput.setText("")
+        reportHistory = reportHistory.filterNot { it.type == "CHILD_ALERT_REPORT" }
+        reportHistoryStore.save(reportHistory)
+        childAlertReportOutput.text = createChildAlertReportOutput()
+        reportHistoryOutput.text = createReportHistoryDisplay()
+        stateStore.save(createSnapshot())
+    }
+
+    private fun shareLatestChildAlertSummary() {
+        val summary = createChildAlertReportOutput()
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.DIAGNOSTICS,
+            title = "Share Vordain child alert summary",
+            payload = summary,
+        )
+    }
+
+    private fun createChildAlertReportOutput(): String {
+        val report = decodedChildAlertReport
+            ?: childAlertReportCodec.decode(lastChildAlertReportPayload)
+                .let { result -> (result as? DebugChildAlertReportCodecResult.Decoded)?.report }
+            ?: return "No child alert report decoded yet"
+        decodedChildAlertReport = report
+        val activeCritical = report.alerts.count {
+            it.status == AlertStatus.ACTIVE && it.severity == AlertSeverity.CRITICAL
+        }
+        return buildString {
+            append("Active critical alerts: $activeCritical\n")
+            append("Summary: ${report.summaryLabel}\n")
+            append("Child device id: ${report.childDeviceId.value}\n")
+            append("Generated at: ${report.generatedAtMillis}\n")
+            append("Debug/local report import only.\n")
+            append("Production alerts will use encrypted relay later.\n")
+            append("Vordain does not receive PINs or account secrets.\n")
+            report.alerts.forEach { alert ->
+                append("${alert.occurredAtMillis} / ${alert.severity} / ${alert.status} / ${alert.type}\n")
+                append("${alert.title}: ${alert.detail}\n")
+                append("Policy version: ${alert.policyVersion ?: "none"}\n")
+            }
+            append(report.warningText)
+        }
+    }
+
     private fun createChildDnsGuardStatusOutput(): String {
         val report = decodedChildSecurityStatusReport
             ?: childSecurityReportCodec.decode(lastChildSecurityStatusReportPayload)
@@ -679,6 +787,9 @@ class ParentMainActivity : Activity() {
             "DNS blocked responses: ${report.dnsBlockedResponseCount}",
             "DNS allowed forwarded: ${report.dnsAllowedForwardedCount}",
             "DNS allowed failures: ${report.dnsAllowedForwardFailureCount}",
+            "Active critical alerts: ${report.activeCriticalAlertCount}",
+            "Heartbeat status: ${report.heartbeatStatusLabel ?: report.heartbeatLabel ?: "Unknown"}",
+            "Latest alert severity: ${report.latestAlertSeverity ?: "none"}",
             "Non-DNS traffic is not inspected in DNS-only mode.",
             "DNS-only mode is not full protection.",
             "Production sync will use encrypted relay later.",
@@ -704,6 +815,11 @@ class ParentMainActivity : Activity() {
             "VPN/session: ${report.vpnSessionLabel ?: "Unknown"}",
             "Setup summary: ${report.setupSummaryLabel ?: "Unknown"}",
             "Heartbeat: ${report.heartbeatLabel ?: "Unknown"}",
+            "Heartbeat status: ${report.heartbeatStatusLabel ?: "Unknown"}",
+            "Last heartbeat at: ${report.lastHeartbeatAtMillis ?: "none"}",
+            "Active critical alerts: ${report.activeCriticalAlertCount}",
+            "Latest alert severity: ${report.latestAlertSeverity ?: "none"}",
+            "Alert summary: ${report.alertSummaryLabel ?: "none"}",
             "Bypass risk: ${report.bypassRiskLabel ?: "Unknown"}",
             "Active mode: ${report.activeMode.toDisplayLabel()}",
             "DNS blocked responses: ${report.dnsBlockedResponseCount}",

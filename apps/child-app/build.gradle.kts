@@ -27,6 +27,7 @@ kotlin {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:alert-center"))
     implementation(project(":core:audit-log"))
     implementation(project(":core:intelligence"))
     implementation(project(":core:pairing"))
@@ -43,5 +44,6 @@ dependencies {
     implementation(project(":vpn:engine"))
     implementation(project(":vpn:packet"))
     implementation(project(":vpn:lab"))
+    implementation(project(":vpn:session"))
     implementation(project(":vpn:service"))
 }

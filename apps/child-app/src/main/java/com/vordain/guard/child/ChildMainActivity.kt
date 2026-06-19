@@ -1,6 +1,8 @@
 package com.vordain.guard.child
 
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -15,6 +17,14 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.vordain.guard.core.alertcenter.AlertSeverity
+import com.vordain.guard.core.alertcenter.AlertStatus
+import com.vordain.guard.core.alertcenter.AlertType
+import com.vordain.guard.core.alertcenter.ChildAlert
+import com.vordain.guard.core.alertcenter.ChildAlertReducer
+import com.vordain.guard.core.alertcenter.ChildAlertTimeline
+import com.vordain.guard.core.alertcenter.DebugChildAlertReport
+import com.vordain.guard.core.alertcenter.DebugChildAlertReportCodec
 import com.vordain.guard.core.auditlog.AuditEntry
 import com.vordain.guard.core.auditlog.AuditEntryType
 import com.vordain.guard.core.auditlog.AuditSeverity
@@ -74,10 +84,12 @@ import com.vordain.guard.features.setupchecklist.HardeningSummaryStatus
 import com.vordain.guard.features.setupchecklist.MaintenanceWindowReason
 import com.vordain.guard.features.setupchecklist.ParentMaintenanceWindow
 import com.vordain.guard.vpn.lab.LabTrafficObservationStats
+import com.vordain.guard.vpn.service.BasicDnsGuardHeartbeatDebugStatus
 import com.vordain.guard.vpn.service.LabCaptureDebugStatus
 import com.vordain.guard.vpn.service.VordainVpnServiceIntents
 import com.vordain.guard.vpn.service.VpnPermissionIntentFactory
 import com.vordain.guard.vpn.service.VpnPrepareResult
+import com.vordain.guard.vpn.session.BasicDnsGuardHeartbeatStatus
 
 class ChildMainActivity : Activity() {
     private val vpnPermissionIntentFactory = VpnPermissionIntentFactory()
@@ -92,6 +104,8 @@ class ChildMainActivity : Activity() {
     private val policyHandoff = ChildDebugPolicyHandoff { System.currentTimeMillis() }
     private val diagnosticsFormatter = ChildDebugDiagnosticsFormatter()
     private val auditTimelineReducer = AuditTimelineReducer()
+    private val childAlertReducer = ChildAlertReducer()
+    private val childAlertReportCodec = DebugChildAlertReportCodec()
     private val debugPayloadEnvelopeCodec = VordainDebugPayloadEnvelopeCodec()
     private val hardeningSetupReducer = HardeningSetupReducer()
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
@@ -103,6 +117,7 @@ class ChildMainActivity : Activity() {
     private val dnsOnlyReadinessEvaluator = DnsOnlyReadinessEvaluator()
     private lateinit var stateStore: ChildDebugStateStore
     private lateinit var auditStore: ChildAuditStateStore
+    private lateinit var alertStore: ChildAlertStateStore
     private lateinit var statusText: TextView
     private lateinit var vpnPermissionText: TextView
     private lateinit var lastCommandText: TextView
@@ -130,6 +145,7 @@ class ChildMainActivity : Activity() {
     private lateinit var localEventsText: TextView
     private lateinit var diagnosticsText: TextView
     private lateinit var auditTimelineText: TextView
+    private lateinit var localAlertsText: TextView
     private var vpnPermissionStatus: String = ChildVpnSmokeLabels.PERMISSION_UNKNOWN
     private var lastCommand: String = ChildVpnSmokeLabels.COMMAND_NONE
     private var shellStatus: String = ChildVpnSmokeLabels.STATUS_NOT_RUNNING
@@ -170,12 +186,15 @@ class ChildMainActivity : Activity() {
     private var reviewResult: ChildDebugReviewResult? = null
     private val localDebugEvents = mutableListOf<String>()
     private var auditTimeline: AuditTimeline = AuditTimeline()
+    private var childAlertTimeline: ChildAlertTimeline = ChildAlertTimeline()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         stateStore = ChildDebugStateStore(this)
         auditStore = ChildAuditStateStore(this)
+        alertStore = ChildAlertStateStore(this)
         auditTimeline = auditStore.load()
+        childAlertTimeline = alertStore.load()
         restoreState(stateStore.load())
         setContentView(createSmokeTestView())
         statusText.text = shellStatus
@@ -698,6 +717,29 @@ class ChildMainActivity : Activity() {
         layout.addView(localEventsText)
         layout.addView(diagnosticsText)
 
+        layout.addView(sectionTitle("Local alerts"))
+        layout.addView(valueLabel("Debug/local alert report only.", textSize = 14f))
+        layout.addView(valueLabel("Production alerts will use encrypted relay later.", textSize = 14f))
+        layout.addView(valueLabel("Local security/status alerts only.", textSize = 14f))
+        layout.addView(valueLabel("No web history or packet logs.", textSize = 14f))
+        layout.addView(button("Copy alert report") {
+            copyChildAlertReport()
+        })
+        layout.addView(button("Share alert report") {
+            shareChildAlertReport()
+        })
+        layout.addView(button("Acknowledge all alerts") {
+            acknowledgeAllAlerts()
+        })
+        layout.addView(button("Clear local alerts") {
+            clearLocalAlerts()
+        })
+        layout.addView(button("Simulate stale heartbeat alert") {
+            simulateStaleHeartbeatAlert()
+        })
+        localAlertsText = valueLabel(createLocalAlertsDisplay(), textSize = 13f)
+        layout.addView(localAlertsText)
+
         layout.addView(sectionTitle("Local audit timeline"))
         layout.addView(valueLabel("Local explicit app-action timeline only.", textSize = 14f))
         layout.addView(valueLabel("No web history or packet logs.", textSize = 14f))
@@ -980,6 +1022,13 @@ class ChildMainActivity : Activity() {
                     title = "Basic DNS Guard started",
                     detail = "Basic DNS Guard start command was sent.",
                 )
+                recordAlert(
+                    type = AlertType.DNS_GUARD_STARTED,
+                    severity = AlertSeverity.INFO,
+                    title = "Basic DNS Guard started",
+                    detail = "Basic DNS Guard start command was sent.",
+                    sourceLabel = "Child app",
+                )
                 setStatus(ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE)
             }
             is VpnPrepareResult.ConsentRequired -> {
@@ -1006,6 +1055,20 @@ class ChildMainActivity : Activity() {
             severity = AuditSeverity.INFO,
             title = "Basic DNS Guard stopped",
             detail = "Basic DNS Guard stop command was sent.",
+        )
+        recordAlert(
+            type = AlertType.DNS_GUARD_STOPPED,
+            severity = AlertSeverity.WARNING,
+            title = "Basic DNS Guard stopped",
+            detail = "Basic DNS Guard stop command was sent.",
+            sourceLabel = "Child app",
+        )
+        recordAlert(
+            type = AlertType.BASIC_DNS_GUARD_STOPPED,
+            severity = AlertSeverity.WARNING,
+            title = "Basic DNS Guard stopped",
+            detail = "Basic DNS Guard is stopped.",
+            sourceLabel = "Child app",
         )
         setStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
@@ -1202,6 +1265,13 @@ class ChildMainActivity : Activity() {
             title = "PIN compromise signal",
             detail = "Hardening changed outside a parent maintenance window.",
         )
+        recordAlert(
+            type = AlertType.PIN_COMPROMISE_SUSPECTED,
+            severity = AlertSeverity.CRITICAL,
+            title = "Parent PIN may be compromised",
+            detail = "Hardening changed outside a parent maintenance window.",
+            sourceLabel = "Hardening setup",
+        )
         saveCurrentState()
         refreshDiagnosticsViews()
     }
@@ -1250,6 +1320,13 @@ class ChildMainActivity : Activity() {
                 severity = AuditSeverity.WARNING,
                 title = "Policy payload rejected",
                 detail = "Debug DNS policy payload was rejected: ${result.reason}.",
+            )
+            recordAlert(
+                type = AlertType.POLICY_REJECTED,
+                severity = AlertSeverity.HIGH,
+                title = "Policy rejected",
+                detail = "Debug DNS policy payload was rejected: ${result.reason}.",
+                sourceLabel = "Policy handoff",
             )
         }
         policyHandoffOutputText.text = "${result.asDisplayText()}\n\n${createActivePolicyDisplay()}"
@@ -1431,6 +1508,13 @@ class ChildMainActivity : Activity() {
 
     private fun simulateVpnStoppedEvent() {
         localDebugEvents += "VPN stopped debug event queued locally in memory"
+        recordAlert(
+            type = AlertType.VPN_STOPPED,
+            severity = AlertSeverity.CRITICAL,
+            title = "VPN stopped",
+            detail = "Debug simulation: VPN stopped or needs review.",
+            sourceLabel = "Debug simulation",
+        )
         refreshDiagnosticsViews()
     }
 
@@ -1474,6 +1558,13 @@ class ChildMainActivity : Activity() {
             title = "Diagnostics copied",
             detail = "Local MVP diagnostics were copied.",
         )
+        recordAlert(
+            type = AlertType.DIAGNOSTICS_GENERATED,
+            severity = AlertSeverity.INFO,
+            title = "Diagnostics copied",
+            detail = "Local diagnostics were copied by user action.",
+            sourceLabel = "Child app",
+        )
         saveCurrentState()
     }
 
@@ -1516,6 +1607,177 @@ class ChildMainActivity : Activity() {
         if (::auditTimelineText.isInitialized) {
             auditTimelineText.text = createAuditTimelineDisplay()
         }
+        if (::localAlertsText.isInitialized) {
+            localAlertsText.text = createLocalAlertsDisplay()
+        }
+    }
+
+    private fun copyChildAlertReport() {
+        val payload = childAlertReportCodec.encode(currentChildAlertReport())
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain child alert report", payload))
+        recordAlert(
+            type = AlertType.DIAGNOSTICS_GENERATED,
+            severity = AlertSeverity.INFO,
+            title = "Alert report copied",
+            detail = "Local alert report was copied by user action.",
+            sourceLabel = "Child app",
+        )
+        recordAudit(
+            type = AuditEntryType.DIAGNOSTICS_COPIED,
+            severity = AuditSeverity.INFO,
+            title = "Alert report copied",
+            detail = "Local alert report was copied.",
+        )
+        refreshDiagnosticsViews()
+    }
+
+    private fun shareChildAlertReport() {
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.DIAGNOSTICS,
+            title = "Share Vordain child alert report",
+            payload = childAlertReportCodec.encode(currentChildAlertReport()),
+        )
+    }
+
+    private fun acknowledgeAllAlerts() {
+        val now = System.currentTimeMillis()
+        childAlertTimeline.alerts
+            .filter { it.status == AlertStatus.ACTIVE }
+            .forEach { alert ->
+                childAlertTimeline = childAlertReducer.acknowledge(childAlertTimeline, alert.id, now)
+            }
+        alertStore.save(childAlertTimeline)
+        if (::localAlertsText.isInitialized) {
+            localAlertsText.text = createLocalAlertsDisplay()
+        }
+    }
+
+    private fun clearLocalAlerts() {
+        childAlertTimeline = ChildAlertTimeline()
+        alertStore.save(childAlertTimeline)
+        if (::localAlertsText.isInitialized) {
+            localAlertsText.text = createLocalAlertsDisplay()
+        }
+        refreshDiagnosticsViews()
+    }
+
+    private fun simulateStaleHeartbeatAlert() {
+        recordAlert(
+            type = AlertType.BASIC_DNS_GUARD_HEARTBEAT_STALE,
+            severity = AlertSeverity.CRITICAL,
+            title = "Heartbeat stale",
+            detail = "Debug simulation: Basic DNS Guard heartbeat needs review.",
+            sourceLabel = "Debug simulation",
+            policyVersion = currentVerifiedPolicyVersion(),
+        )
+        recordAudit(
+            type = AuditEntryType.PIN_COMPROMISE_SIGNAL,
+            severity = AuditSeverity.WARNING,
+            title = "Heartbeat alert simulated",
+            detail = "Debug heartbeat stale alert was simulated locally.",
+        )
+        refreshDiagnosticsViews()
+    }
+
+    private fun currentChildAlertReport(): DebugChildAlertReport {
+        return DebugChildAlertReport(
+            childDeviceId = DeviceId(childDeviceId),
+            generatedAtMillis = System.currentTimeMillis(),
+            alerts = childAlertReducer.latest(childAlertTimeline, ALERT_REPORT_COUNT),
+            summaryLabel = createAlertSummaryLabel(),
+        )
+    }
+
+    private fun recordAlert(
+        type: AlertType,
+        severity: AlertSeverity,
+        title: String,
+        detail: String,
+        sourceLabel: String,
+        policyVersion: String? = currentVerifiedPolicyVersion(),
+    ) {
+        if (!::alertStore.isInitialized) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        val alert = ChildAlert(
+            id = "$now-${type.name}",
+            type = type,
+            severity = severity,
+            status = AlertStatus.ACTIVE,
+            childDeviceId = DeviceId(childDeviceId),
+            occurredAtMillis = now,
+            title = title,
+            detail = detail,
+            sourceLabel = sourceLabel,
+            policyVersion = policyVersion,
+        )
+        childAlertTimeline = childAlertReducer.append(
+            timeline = childAlertTimeline,
+            alert = alert,
+            maxAlerts = ALERT_MAX_ENTRIES,
+        )
+        alertStore.save(childAlertTimeline)
+        if (::localAlertsText.isInitialized) {
+            localAlertsText.text = createLocalAlertsDisplay()
+        }
+        if (severity == AlertSeverity.CRITICAL || severity == AlertSeverity.HIGH) {
+            showLocalAlertNotification()
+        }
+    }
+
+    private fun createAlertSummaryLabel(): String {
+        val activeCritical = childAlertReducer.activeCriticalCount(childAlertTimeline)
+        val activeTotal = childAlertTimeline.alerts.count { it.status == AlertStatus.ACTIVE }
+        return if (activeCritical > 0) {
+            "$activeCritical active critical alert(s)"
+        } else {
+            "$activeTotal active alert(s)"
+        }
+    }
+
+    private fun createLocalAlertsDisplay(): String {
+        val latest = childAlertReducer.latest(childAlertTimeline, ALERT_DISPLAY_COUNT)
+        if (latest.isEmpty()) {
+            return "No local alerts yet\nDebug/local alert report only.\nNo web history or packet logs."
+        }
+        return buildString {
+            append("Active critical count: ${childAlertReducer.activeCriticalCount(childAlertTimeline)}\n")
+            append("Summary: ${createAlertSummaryLabel()}\n")
+            append("Debug/local alert report only.\n")
+            append("No web history or packet logs.\n")
+            latest.forEach { alert ->
+                append("${alert.occurredAtMillis} / ${alert.severity} / ${alert.status} / ${alert.type}\n")
+                append("${alert.title}: ${alert.detail}\n")
+                append("Source: ${alert.sourceLabel}\n")
+                append("Policy version: ${alert.policyVersion ?: "none"}\n")
+            }
+        }.trimEnd()
+    }
+
+    private fun showLocalAlertNotification() {
+        ensureLocalAlertNotificationChannel()
+        val notification = android.app.Notification.Builder(this, LOCAL_ALERT_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Vordain Guard needs attention")
+            .setContentText("DNS Guard stopped or needs review")
+            .setShowWhen(true)
+            .build()
+        getSystemService(NotificationManager::class.java)
+            .notify(LOCAL_ALERT_NOTIFICATION_ID, notification)
+    }
+
+    private fun ensureLocalAlertNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+        val channel = NotificationChannel(
+            LOCAL_ALERT_CHANNEL_ID,
+            "Vordain Guard local alerts",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun recordAudit(
@@ -1639,9 +1901,12 @@ class ChildMainActivity : Activity() {
         val readiness = currentDnsOnlyReadinessResult()
         val hardening = currentHardeningSetupSnapshot()
         val bypassSummary = currentBypassRiskSummary()
+        val heartbeatSnapshot = BasicDnsGuardHeartbeatDebugStatus.snapshot()
         return listOf(
             "Overall local MVP status: ${report.overallStatus.toDisplayLabel()}",
             "Basic DNS Guard mode: ${basicDnsGuardModeLabel()}",
+            "Heartbeat: ${heartbeatSnapshot.statusLabel}",
+            "Active critical alerts: ${childAlertReducer.activeCriticalCount(childAlertTimeline)}",
             "Readiness: ${readiness.status.toBasicDnsDisplayLabel()} - ${readiness.reason}",
             "Active policy source: $currentPolicySource",
             "Active policy version: $currentPolicyVersion",
@@ -1689,6 +1954,7 @@ class ChildMainActivity : Activity() {
     private fun currentBasicDnsGuardDiagnosticsReport(): BasicDnsGuardDiagnosticsReport {
         val stats = LabCaptureDebugStatus.snapshot()
         val readiness = currentDnsOnlyReadinessResult()
+        val heartbeatSnapshot = BasicDnsGuardHeartbeatDebugStatus.snapshot()
         return BasicDnsGuardDiagnosticsReport(
             childDeviceId = DeviceId(childDeviceId),
             generatedAtMillis = System.currentTimeMillis(),
@@ -1703,6 +1969,11 @@ class ChildMainActivity : Activity() {
             dnsAllowedForwardedCount = stats.dnsAllowedForwardedCount,
             encryptedDnsBlockedCount = stats.encryptedDnsBlockedCount,
             dnsFailureCount = stats.dnsAllowedForwardFailureCount + stats.dnsResponseWriteFailureCount,
+            activeCriticalAlertCount = childAlertReducer.activeCriticalCount(childAlertTimeline),
+            latestAlertSeverity = childAlertTimeline.alerts.firstOrNull()?.severity?.name,
+            heartbeatStatusLabel = heartbeatSnapshot.statusLabel,
+            lastHeartbeatAtMillis = heartbeatSnapshot.lastTickAtMillis,
+            alertSummaryLabel = createAlertSummaryLabel(),
         )
     }
 
@@ -1891,6 +2162,8 @@ class ChildMainActivity : Activity() {
             shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE ||
             shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING
         val labStats = LabCaptureDebugStatus.snapshot()
+        val heartbeatSnapshot = BasicDnsGuardHeartbeatDebugStatus.snapshot()
+        val heartbeatFresh = heartbeatSnapshot.status == BasicDnsGuardHeartbeatStatus.FRESH
         val activeMode = if (
             shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE ||
             shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING
@@ -1931,8 +2204,8 @@ class ChildMainActivity : Activity() {
                 vpnSessionRunning = shellStatus == ChildVpnSmokeLabels.STATUS_SHELL_ACTIVE || labCaptureActive,
                 vpnStopped = shellStatus == ChildVpnSmokeLabels.STATUS_STOPPED ||
                     shellStatus == ChildVpnSmokeLabels.STATUS_REVOKED_UNKNOWN,
-                heartbeatLabel = "Unknown",
-                heartbeatFresh = false,
+                heartbeatLabel = heartbeatSnapshot.statusLabel,
+                heartbeatFresh = heartbeatFresh,
                 setupSummaryLabel = hardening.summaryStatus.toDisplayLabel(),
                 bypassRiskLabel = "${bypassSummary.overallStatus.toDisplayLabel()} / ${readiness.status}: ${readiness.reason}",
                 labCaptureActive = labCaptureActive,
@@ -1941,6 +2214,11 @@ class ChildMainActivity : Activity() {
                 dnsBlockedResponseCount = labStats.dnsBlockedResponseCount,
                 dnsAllowedForwardedCount = labStats.dnsAllowedForwardedCount,
                 dnsAllowedForwardFailureCount = labStats.dnsAllowedForwardFailureCount,
+                activeCriticalAlertCount = childAlertReducer.activeCriticalCount(childAlertTimeline),
+                latestAlertSeverity = childAlertTimeline.alerts.firstOrNull()?.severity?.name,
+                heartbeatStatusLabel = heartbeatSnapshot.statusLabel,
+                lastHeartbeatAtMillis = heartbeatSnapshot.lastTickAtMillis,
+                alertSummaryLabel = createAlertSummaryLabel(),
             ),
         )
     }
@@ -1959,6 +2237,11 @@ class ChildMainActivity : Activity() {
             append("VPN/session: ${report.vpnSessionLabel ?: "Unknown"}\n")
             append("Setup summary: ${report.setupSummaryLabel ?: "Unknown"}\n")
             append("Heartbeat: ${report.heartbeatLabel ?: "Unknown"}\n")
+            append("Heartbeat status: ${report.heartbeatStatusLabel ?: "Unknown"}\n")
+            append("Last heartbeat at: ${report.lastHeartbeatAtMillis ?: "none"}\n")
+            append("Active critical alerts: ${report.activeCriticalAlertCount}\n")
+            append("Latest alert severity: ${report.latestAlertSeverity ?: "none"}\n")
+            append("Alert summary: ${report.alertSummaryLabel ?: "none"}\n")
             append("Bypass risk: ${report.bypassRiskLabel ?: "Unknown"}\n")
             append("Active mode: ${report.activeMode.toDisplayLabel()}\n")
             append("DNS blocked responses: ${report.dnsBlockedResponseCount}\n")
@@ -2053,6 +2336,13 @@ class ChildMainActivity : Activity() {
                 severity = AuditSeverity.WARNING,
                 title = "Stored policy rejected",
                 detail = "Stored debug DNS policy was rejected: ${restored.reason}.",
+            )
+            recordAlert(
+                type = AlertType.POLICY_RESTORED_FAILED,
+                severity = AlertSeverity.HIGH,
+                title = "Stored policy rejected",
+                detail = "Stored debug DNS policy was rejected: ${restored.reason}.",
+                sourceLabel = "Policy restore",
             )
         }
     }
@@ -2545,6 +2835,10 @@ class ChildMainActivity : Activity() {
             ?: 0
     }
 
+    private fun currentVerifiedPolicyVersion(): String? {
+        return currentPolicyVersion.takeIf { currentPolicySource.startsWith("Verified") }
+    }
+
     private fun createPairingOutput(): String {
         return when {
             acceptedParentSummary != null -> "Paired parent summary:\n$acceptedParentSummary"
@@ -2559,6 +2853,11 @@ class ChildMainActivity : Activity() {
         const val ACTION_USER_SETTINGS = "android.settings.USER_SETTINGS"
         const val AUDIT_MAX_ENTRIES = 40
         const val AUDIT_DISPLAY_COUNT = 20
+        const val ALERT_MAX_ENTRIES = 50
+        const val ALERT_DISPLAY_COUNT = 20
+        const val ALERT_REPORT_COUNT = 20
+        const val LOCAL_ALERT_CHANNEL_ID = "vordain_guard_local_alerts"
+        const val LOCAL_ALERT_NOTIFICATION_ID = 42_201
         val defaultPairingCapabilities = setOf(
             PairingCapability.POLICY_UPDATES,
             PairingCapability.HEARTBEAT_STATUS,

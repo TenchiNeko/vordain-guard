@@ -55,6 +55,11 @@ data class ChildSecurityStatusReport(
     val dnsBlockedResponseCount: Long = 0,
     val dnsAllowedForwardedCount: Long = 0,
     val dnsAllowedForwardFailureCount: Long = 0,
+    val activeCriticalAlertCount: Int = 0,
+    val latestAlertSeverity: String? = null,
+    val heartbeatStatusLabel: String? = null,
+    val lastHeartbeatAtMillis: Long? = null,
+    val alertSummaryLabel: String? = null,
     val warningText: String = WARNING_TEXT,
 ) {
     companion object {
@@ -93,6 +98,11 @@ data class ChildSecurityStatusInput(
     val dnsBlockedResponseCount: Long = 0,
     val dnsAllowedForwardedCount: Long = 0,
     val dnsAllowedForwardFailureCount: Long = 0,
+    val activeCriticalAlertCount: Int = 0,
+    val latestAlertSeverity: String? = null,
+    val heartbeatStatusLabel: String? = null,
+    val lastHeartbeatAtMillis: Long? = null,
+    val alertSummaryLabel: String? = null,
 )
 
 data class BasicDnsGuardDiagnosticsReport(
@@ -109,6 +119,11 @@ data class BasicDnsGuardDiagnosticsReport(
     val dnsAllowedForwardedCount: Long,
     val encryptedDnsBlockedCount: Long,
     val dnsFailureCount: Long,
+    val activeCriticalAlertCount: Int = 0,
+    val latestAlertSeverity: String? = null,
+    val heartbeatStatusLabel: String? = null,
+    val lastHeartbeatAtMillis: Long? = null,
+    val alertSummaryLabel: String? = null,
     val warningText: String = WARNING_TEXT,
 ) {
     companion object {
