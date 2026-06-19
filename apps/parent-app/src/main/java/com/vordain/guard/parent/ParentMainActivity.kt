@@ -35,6 +35,11 @@ import com.vordain.guard.core.policysync.DebugPolicyUpdateCodec
 import com.vordain.guard.core.policysync.PolicyUpdateSignature
 import com.vordain.guard.core.policysync.PolicyVersion
 import com.vordain.guard.core.policysync.SignedPolicyUpdate
+import com.vordain.guard.core.statusreport.ChildSecurityOverallStatus
+import com.vordain.guard.core.statusreport.ChildSecuritySignal
+import com.vordain.guard.core.statusreport.ChildSecurityStatusReport
+import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodec
+import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodecResult
 import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodec
 import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodecResult
 import com.vordain.guard.features.setupchecklist.HardeningEvidenceType
@@ -49,6 +54,7 @@ class ParentMainActivity : Activity() {
     private val acceptanceCodec = DebugPairingAcceptanceCodec()
     private val pairingEvaluator = PairingEvaluator()
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
+    private val childSecurityReportCodec = DebugChildSecurityReportCodec()
     private lateinit var stateStore: ParentDebugStateStore
     private lateinit var targetDeviceInput: EditText
     private lateinit var policyVersionInput: EditText
@@ -66,12 +72,16 @@ class ParentMainActivity : Activity() {
     private lateinit var pairingOutput: TextView
     private lateinit var setupReportInput: EditText
     private lateinit var setupReportOutput: TextView
+    private lateinit var childSecurityReportInput: EditText
+    private lateinit var childSecurityReportOutput: TextView
     private var lastPayload: String = ""
     private var lastPairingInvitePayload: String = ""
     private var lastPairingAcceptancePayload: String = ""
     private var acceptedChildSummary: String? = null
     private var lastHardeningSetupReportPayload: String = ""
     private var decodedHardeningSetupReport: HardeningSetupSnapshot? = null
+    private var lastChildSecurityStatusReportPayload: String = ""
+    private var decodedChildSecurityStatusReport: ChildSecurityStatusReport? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,6 +110,7 @@ class ParentMainActivity : Activity() {
         lastPairingAcceptancePayload = snapshot.latestPairingAcceptancePayload.orEmpty()
         acceptedChildSummary = snapshot.acceptedChildSummary
         lastHardeningSetupReportPayload = snapshot.latestHardeningSetupReportPayload.orEmpty()
+        lastChildSecurityStatusReportPayload = snapshot.latestChildSecurityStatusReportPayload.orEmpty()
         pairingSessionInput = editText(snapshot.pairingSessionId)
         parentDeviceInput = editText(snapshot.parentDeviceId)
         parentDisplayNameInput = editText(snapshot.parentDisplayName)
@@ -107,6 +118,7 @@ class ParentMainActivity : Activity() {
         verificationCodeInput = editText(snapshot.verificationCode)
         childAcceptanceInput = editText(lastPairingAcceptancePayload)
         setupReportInput = editText(lastHardeningSetupReportPayload)
+        childSecurityReportInput = editText(lastChildSecurityStatusReportPayload)
         targetDeviceInput = editText(snapshot.targetChildDeviceId)
         policyVersionInput = editText(snapshot.policyVersion)
         allowDomainsInput = editText(snapshot.allowDomainsText)
@@ -165,6 +177,20 @@ class ParentMainActivity : Activity() {
         })
         setupReportOutput = valueLabel(createHardeningSetupOutput(), 14f)
         layout.addView(setupReportOutput)
+
+        layout.addView(sectionTitle("Child security status"))
+        layout.addView(valueLabel("This debug report is copy/paste only. Production will use encrypted relay later.", 14f))
+        layout.addView(valueLabel("Vordain does not receive PINs or credentials.", 14f))
+        layout.addView(valueLabel(ChildSecurityStatusReport.WARNING_TEXT, 14f))
+        layout.addView(labeledField("Paste child status report", childSecurityReportInput))
+        layout.addView(button("Decode status report") {
+            decodeChildSecurityStatusReport()
+        })
+        layout.addView(button("Clear status report") {
+            clearChildSecurityStatusReport()
+        })
+        childSecurityReportOutput = valueLabel(createChildSecurityStatusOutput(), 14f)
+        layout.addView(childSecurityReportOutput)
 
         return ScrollView(this).apply { addView(layout) }
     }
@@ -308,6 +334,7 @@ class ParentMainActivity : Activity() {
             latestPairingAcceptancePayload = lastPairingAcceptancePayload.takeIf(String::isNotBlank),
             acceptedChildSummary = acceptedChildSummary,
             latestHardeningSetupReportPayload = lastHardeningSetupReportPayload.takeIf(String::isNotBlank),
+            latestChildSecurityStatusReportPayload = lastChildSecurityStatusReportPayload.takeIf(String::isNotBlank),
         )
     }
 
@@ -361,6 +388,49 @@ class ParentMainActivity : Activity() {
             lines += "${step.toDisplayLabel()}: ${item.status.toDisplayLabel()} / ${item.evidenceType.toDisplayLabel()} / ${item.note ?: "No note"}"
         }
         return lines.joinToString(separator = "\n")
+    }
+
+    private fun decodeChildSecurityStatusReport() {
+        lastChildSecurityStatusReportPayload = childSecurityReportInput.text.toString()
+        childSecurityReportOutput.text = when (val result = childSecurityReportCodec.decode(lastChildSecurityStatusReportPayload)) {
+            is DebugChildSecurityReportCodecResult.Decoded -> {
+                decodedChildSecurityStatusReport = result.report
+                createChildSecurityStatusOutput()
+            }
+            is DebugChildSecurityReportCodecResult.Rejected -> {
+                decodedChildSecurityStatusReport = null
+                "Child security status report rejected: ${result.reason}"
+            }
+        }
+        stateStore.save(createSnapshot())
+    }
+
+    private fun clearChildSecurityStatusReport() {
+        lastChildSecurityStatusReportPayload = ""
+        decodedChildSecurityStatusReport = null
+        childSecurityReportInput.setText("")
+        childSecurityReportOutput.text = createChildSecurityStatusOutput()
+        stateStore.save(createSnapshot())
+    }
+
+    private fun createChildSecurityStatusOutput(): String {
+        val report = decodedChildSecurityStatusReport
+            ?: childSecurityReportCodec.decode(lastChildSecurityStatusReportPayload)
+                .let { result -> (result as? DebugChildSecurityReportCodecResult.Decoded)?.report }
+            ?: return "No child security status report decoded yet"
+        decodedChildSecurityStatusReport = report
+        return listOf(
+            "Overall status: ${report.overallStatus.toDisplayLabel()}",
+            "Child device id: ${report.childDeviceId.value}",
+            "Generated at: ${report.generatedAtMillis}",
+            "Policy version: ${report.policyVersion ?: "none"}",
+            "VPN/session: ${report.vpnSessionLabel ?: "Unknown"}",
+            "Setup summary: ${report.setupSummaryLabel ?: "Unknown"}",
+            "Heartbeat: ${report.heartbeatLabel ?: "Unknown"}",
+            "Bypass risk: ${report.bypassRiskLabel ?: "Unknown"}",
+            "Signals: ${report.signals.toDisplayLabels()}",
+            report.warningText,
+        ).joinToString(separator = "\n")
     }
 
     private fun createPairingOutput(): String {
@@ -508,6 +578,44 @@ class ParentMainActivity : Activity() {
             HardeningSetupStep.PIN_COMPROMISE_REVIEW -> "PIN compromise review"
             HardeningSetupStep.VPN_LIFECYCLE_HEALTH -> "VPN lifecycle health"
             HardeningSetupStep.FINAL_PARENT_REVIEW -> "Final parent review"
+        }
+    }
+
+    private fun ChildSecurityOverallStatus.toDisplayLabel(): String {
+        return when (this) {
+            ChildSecurityOverallStatus.NOT_STARTED -> "Unknown"
+            ChildSecurityOverallStatus.SETUP_IN_PROGRESS -> "Needs attention"
+            ChildSecurityOverallStatus.READY_FOR_LAB_TEST -> "Ready for lab test"
+            ChildSecurityOverallStatus.NEEDS_ATTENTION -> "Needs attention"
+            ChildSecurityOverallStatus.VPN_STOPPED -> "VPN stopped"
+            ChildSecurityOverallStatus.PIN_COMPROMISE_SUSPECTED -> "PIN may be compromised"
+            ChildSecurityOverallStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun Set<ChildSecuritySignal>.toDisplayLabels(): String {
+        if (isEmpty()) {
+            return "none"
+        }
+        return sortedBy(ChildSecuritySignal::name)
+            .joinToString(separator = ", ") { signal -> signal.toDisplayLabel() }
+    }
+
+    private fun ChildSecuritySignal.toDisplayLabel(): String {
+        return when (this) {
+            ChildSecuritySignal.VPN_PERMISSION_CONFIRMED -> "VPN permission confirmed"
+            ChildSecuritySignal.VPN_ALWAYS_ON_CONFIRMED -> "Always-on VPN confirmed"
+            ChildSecuritySignal.BLOCK_WITHOUT_VPN_CONFIRMED -> "Block without VPN confirmed"
+            ChildSecuritySignal.SETTINGS_LOCK_CONFIRMED -> "Settings lock confirmed"
+            ChildSecuritySignal.DEVELOPER_OPTIONS_DISABLED_CONFIRMED -> "Developer Options disabled"
+            ChildSecuritySignal.ADB_DISABLED_CONFIRMED -> "ADB disabled"
+            ChildSecuritySignal.NO_UNRESTRICTED_PROFILES_CONFIRMED -> "No unrestricted profiles confirmed"
+            ChildSecuritySignal.POLICY_APPLIED -> "Policy applied"
+            ChildSecuritySignal.HEARTBEAT_FRESH -> "Heartbeat fresh"
+            ChildSecuritySignal.VPN_SESSION_RUNNING -> "VPN session running"
+            ChildSecuritySignal.LAB_CAPTURE_ACTIVE -> "Lab capture active"
+            ChildSecuritySignal.PIN_COMPROMISE_SUSPECTED -> "PIN may be compromised"
+            ChildSecuritySignal.VPN_STOPPED -> "VPN stopped"
         }
     }
 

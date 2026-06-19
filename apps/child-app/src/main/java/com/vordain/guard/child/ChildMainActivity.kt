@@ -32,6 +32,12 @@ import com.vordain.guard.core.pairing.PairingVerificationCode
 import com.vordain.guard.core.policysync.PersistedSignedPolicySnapshot
 import com.vordain.guard.core.policysync.PolicyVersion
 import com.vordain.guard.core.policysync.SignedPolicySnapshotRestorer
+import com.vordain.guard.core.statusreport.ChildSecurityOverallStatus
+import com.vordain.guard.core.statusreport.ChildSecuritySignal
+import com.vordain.guard.core.statusreport.ChildSecurityStatusEvaluator
+import com.vordain.guard.core.statusreport.ChildSecurityStatusInput
+import com.vordain.guard.core.statusreport.ChildSecurityStatusReport
+import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodec
 import com.vordain.guard.data.review.ReviewRequestReason
 import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodec
 import com.vordain.guard.features.setupchecklist.DebugHardeningSetupReportCodecResult
@@ -62,6 +68,8 @@ class ChildMainActivity : Activity() {
     private val diagnosticsFormatter = ChildDebugDiagnosticsFormatter()
     private val hardeningSetupReducer = HardeningSetupReducer()
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
+    private val childSecurityStatusEvaluator = ChildSecurityStatusEvaluator()
+    private val childSecurityReportCodec = DebugChildSecurityReportCodec()
     private lateinit var stateStore: ChildDebugStateStore
     private lateinit var statusText: TextView
     private lateinit var vpnPermissionText: TextView
@@ -69,6 +77,7 @@ class ChildMainActivity : Activity() {
     private lateinit var shellStatusText: TextView
     private lateinit var setupChecklistText: TextView
     private lateinit var hardeningSetupText: TextView
+    private lateinit var childSecurityStatusText: TextView
     private lateinit var labCaptureText: TextView
     private lateinit var policyDomainInput: EditText
     private lateinit var policyOutputText: TextView
@@ -110,6 +119,8 @@ class ChildMainActivity : Activity() {
     private var setupUnknownSourcesStatus: SetupCheckState = SetupCheckState.UNKNOWN
     private var hardeningSetupSnapshot: HardeningSetupSnapshot? = null
     private var latestHardeningSetupReportPayload: String? = null
+    private var latestChildSecurityStatusReportPayload: String? = null
+    private var latestChildSecurityStatusReport: ChildSecurityStatusReport? = null
     private var lastDiagnosticsText: String? = null
     private var policyResult: ChildDebugPolicyResult? = null
     private var policyHandoffResult: ChildDebugPolicyHandoffResult? = null
@@ -396,6 +407,23 @@ class ChildMainActivity : Activity() {
         layout.addView(button("Clear setup confirmations") {
             clearHardeningSetup()
         })
+
+        layout.addView(sectionTitle("Child security status report"))
+        layout.addView(valueLabel(ChildSecurityStatusReport.WARNING_TEXT, textSize = 14f))
+        layout.addView(button("Generate status report") {
+            generateChildSecurityStatusReport()
+        })
+        layout.addView(button("Copy status report") {
+            copyChildSecurityStatusReport()
+        })
+        layout.addView(button("Refresh status report") {
+            refreshChildSecurityStatusReport()
+        })
+        childSecurityStatusText = valueLabel(
+            createChildSecurityStatusDisplay(currentChildSecurityStatusReport()),
+            textSize = 14f,
+        )
+        layout.addView(childSecurityStatusText)
 
         layout.addView(sectionTitle("Local policy/domain tester"))
         policyDomainInput = editText("blocked.example")
@@ -951,6 +979,11 @@ class ChildMainActivity : Activity() {
         if (::hardeningSetupText.isInitialized) {
             hardeningSetupText.text = createHardeningSetupDisplay(currentHardeningSetupSnapshot())
         }
+        if (::childSecurityStatusText.isInitialized) {
+            childSecurityStatusText.text = createChildSecurityStatusDisplay(
+                latestChildSecurityStatusReport ?: currentChildSecurityStatusReport(),
+            )
+        }
         localEventsText.text = if (localDebugEvents.isEmpty()) {
             "No local debug events"
         } else {
@@ -1062,6 +1095,85 @@ class ChildMainActivity : Activity() {
         return lines.joinToString(separator = "\n")
     }
 
+    private fun generateChildSecurityStatusReport() {
+        val report = currentChildSecurityStatusReport()
+        latestChildSecurityStatusReport = report
+        latestChildSecurityStatusReportPayload = childSecurityReportCodec.encode(report)
+        childSecurityStatusText.text = createChildSecurityStatusDisplay(report)
+        saveCurrentState()
+    }
+
+    private fun copyChildSecurityStatusReport() {
+        if (latestChildSecurityStatusReportPayload.isNullOrBlank()) {
+            generateChildSecurityStatusReport()
+        }
+        val payload = latestChildSecurityStatusReportPayload.orEmpty()
+        if (payload.isBlank()) {
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain child security status report", payload))
+        childSecurityStatusText.text = "${createChildSecurityStatusDisplay(currentChildSecurityStatusReport())}\n\nCopied status report."
+        saveCurrentState()
+    }
+
+    private fun refreshChildSecurityStatusReport() {
+        generateChildSecurityStatusReport()
+    }
+
+    private fun currentChildSecurityStatusReport(): ChildSecurityStatusReport {
+        val hardening = currentHardeningSetupSnapshot()
+        val settingsLockConfirmed = hardening.isConfirmed(HardeningSetupStep.SETTINGS_LOCK_PARENT_PIN_ONLY) ||
+            hardening.isConfirmed(HardeningSetupStep.SETTINGS_APP_LOCK)
+        val adbDisabledConfirmed = hardening.isConfirmed(HardeningSetupStep.USB_DEBUGGING_DISABLED) &&
+            hardening.isConfirmed(HardeningSetupStep.WIRELESS_DEBUGGING_DISABLED)
+        val noUnrestrictedProfilesConfirmed = hardening.isConfirmed(HardeningSetupStep.NO_UNRESTRICTED_SECONDARY_USERS) &&
+            hardening.isConfirmed(HardeningSetupStep.NO_UNRESTRICTED_WORK_PROFILE)
+        val labCaptureActive = shellStatus == ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_ACTIVE ||
+            shellStatus == ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_STARTING
+        return childSecurityStatusEvaluator.evaluate(
+            ChildSecurityStatusInput(
+                childDeviceId = DeviceId(childDeviceId),
+                generatedAtMillis = System.currentTimeMillis(),
+                vpnPermissionConfirmed = hardening.isConfirmed(HardeningSetupStep.VPN_PERMISSION) ||
+                    vpnPermissionStatus == ChildVpnSmokeLabels.PERMISSION_GRANTED,
+                alwaysOnVpnConfirmed = hardening.isConfirmed(HardeningSetupStep.VPN_ALWAYS_ON),
+                blockWithoutVpnConfirmed = hardening.isConfirmed(HardeningSetupStep.BLOCK_WITHOUT_VPN),
+                settingsLockConfirmed = settingsLockConfirmed,
+                developerOptionsDisabledConfirmed = hardening.isConfirmed(HardeningSetupStep.DEVELOPER_OPTIONS_DISABLED),
+                adbDisabledConfirmed = adbDisabledConfirmed,
+                noUnrestrictedProfilesConfirmed = noUnrestrictedProfilesConfirmed,
+                policyVersion = currentPolicyVersion.takeIf { currentPolicySource.startsWith("Verified") },
+                policyApplied = currentPolicySource.startsWith("Verified"),
+                vpnSessionLabel = shellStatus,
+                vpnSessionRunning = shellStatus == ChildVpnSmokeLabels.STATUS_SHELL_ACTIVE || labCaptureActive,
+                vpnStopped = shellStatus == ChildVpnSmokeLabels.STATUS_STOPPED ||
+                    shellStatus == ChildVpnSmokeLabels.STATUS_REVOKED_UNKNOWN,
+                heartbeatLabel = "Unknown",
+                heartbeatFresh = false,
+                setupSummaryLabel = hardening.summaryStatus.toDisplayLabel(),
+                bypassRiskLabel = hardening.latestPinCompromiseSignal.toDisplayLabel(),
+                labCaptureActive = labCaptureActive,
+                pinCompromiseSuspected = hardening.latestPinCompromiseSignal.suspected,
+            ),
+        )
+    }
+
+    private fun createChildSecurityStatusDisplay(report: ChildSecurityStatusReport): String {
+        return buildString {
+            append("Overall status: ${report.overallStatus.toDisplayLabel()}\n")
+            append("Child device id: ${report.childDeviceId.value}\n")
+            append("Generated at: ${report.generatedAtMillis}\n")
+            append("Policy version: ${report.policyVersion ?: "none"}\n")
+            append("VPN/session: ${report.vpnSessionLabel ?: "Unknown"}\n")
+            append("Setup summary: ${report.setupSummaryLabel ?: "Unknown"}\n")
+            append("Heartbeat: ${report.heartbeatLabel ?: "Unknown"}\n")
+            append("Bypass risk: ${report.bypassRiskLabel ?: "Unknown"}\n")
+            append("Signals: ${report.signals.toDisplayLabels()}\n")
+            append(report.warningText)
+        }
+    }
+
     private fun restoreState(snapshot: ChildDebugStateSnapshot) {
         childDeviceId = snapshot.childDeviceId.ifBlank { ChildDebugStateSnapshot.DEFAULT_CHILD_DEVICE_ID }
         latestPolicyPayload = snapshot.latestPolicyPayload
@@ -1083,7 +1195,9 @@ class ChildMainActivity : Activity() {
         latestPairingAcceptancePayload = snapshot.latestPairingAcceptancePayload
         acceptedParentSummary = snapshot.acceptedParentSummary
         latestHardeningSetupReportPayload = snapshot.latestHardeningSetupReportPayload
+        latestChildSecurityStatusReportPayload = snapshot.latestChildSecurityStatusReportPayload
         hardeningSetupSnapshot = restoreHardeningSetupSnapshot(snapshot.latestHardeningSetupReportPayload)
+        latestChildSecurityStatusReport = restoreChildSecurityStatusReport(snapshot.latestChildSecurityStatusReportPayload)
         syncLegacySetupStateFromHardening()
 
         val payload = snapshot.latestPolicyPayload
@@ -1159,6 +1273,7 @@ class ChildMainActivity : Activity() {
                 latestPairingAcceptancePayload = latestPairingAcceptancePayload,
                 acceptedParentSummary = acceptedParentSummary,
                 latestHardeningSetupReportPayload = latestHardeningSetupReportPayload,
+                latestChildSecurityStatusReportPayload = latestChildSecurityStatusReportPayload,
             ),
         )
     }
@@ -1190,6 +1305,19 @@ class ChildMainActivity : Activity() {
             childDeviceId = DeviceId(childDeviceId),
             currentTimeMillis = System.currentTimeMillis(),
         )
+    }
+
+    private fun restoreChildSecurityStatusReport(payload: String?): ChildSecurityStatusReport? {
+        if (payload.isNullOrBlank()) {
+            return null
+        }
+        return when (val result = childSecurityReportCodec.decode(payload)) {
+            is com.vordain.guard.core.statusreport.DebugChildSecurityReportCodecResult.Decoded -> result.report
+            is com.vordain.guard.core.statusreport.DebugChildSecurityReportCodecResult.Rejected -> {
+                latestChildSecurityStatusReportPayload = null
+                null
+            }
+        }
     }
 
     private fun syncLegacySetupStateFromHardening() {
@@ -1296,6 +1424,67 @@ class ChildMainActivity : Activity() {
             HardeningSetupStep.PIN_COMPROMISE_REVIEW -> "PIN compromise review"
             HardeningSetupStep.VPN_LIFECYCLE_HEALTH -> "VPN lifecycle health"
             HardeningSetupStep.FINAL_PARENT_REVIEW -> "Final parent review"
+        }
+    }
+
+    private fun ChildSecurityOverallStatus.toDisplayLabel(): String {
+        return when (this) {
+            ChildSecurityOverallStatus.NOT_STARTED -> "Unknown"
+            ChildSecurityOverallStatus.SETUP_IN_PROGRESS -> "Needs attention"
+            ChildSecurityOverallStatus.READY_FOR_LAB_TEST -> "Ready for lab test"
+            ChildSecurityOverallStatus.NEEDS_ATTENTION -> "Needs attention"
+            ChildSecurityOverallStatus.VPN_STOPPED -> "VPN stopped"
+            ChildSecurityOverallStatus.PIN_COMPROMISE_SUSPECTED -> "PIN may be compromised"
+            ChildSecurityOverallStatus.UNKNOWN -> "Unknown"
+        }
+    }
+
+    private fun Set<ChildSecuritySignal>.toDisplayLabels(): String {
+        if (isEmpty()) {
+            return "none"
+        }
+        return sortedBy(ChildSecuritySignal::name)
+            .joinToString(separator = ", ") { signal -> signal.toDisplayLabel() }
+    }
+
+    private fun ChildSecuritySignal.toDisplayLabel(): String {
+        return when (this) {
+            ChildSecuritySignal.VPN_PERMISSION_CONFIRMED -> "VPN permission confirmed"
+            ChildSecuritySignal.VPN_ALWAYS_ON_CONFIRMED -> "Always-on VPN confirmed"
+            ChildSecuritySignal.BLOCK_WITHOUT_VPN_CONFIRMED -> "Block without VPN confirmed"
+            ChildSecuritySignal.SETTINGS_LOCK_CONFIRMED -> "Settings lock confirmed"
+            ChildSecuritySignal.DEVELOPER_OPTIONS_DISABLED_CONFIRMED -> "Developer Options disabled"
+            ChildSecuritySignal.ADB_DISABLED_CONFIRMED -> "ADB disabled"
+            ChildSecuritySignal.NO_UNRESTRICTED_PROFILES_CONFIRMED -> "No unrestricted profiles confirmed"
+            ChildSecuritySignal.POLICY_APPLIED -> "Policy applied"
+            ChildSecuritySignal.HEARTBEAT_FRESH -> "Heartbeat fresh"
+            ChildSecuritySignal.VPN_SESSION_RUNNING -> "VPN session running"
+            ChildSecuritySignal.LAB_CAPTURE_ACTIVE -> "Lab capture active"
+            ChildSecuritySignal.PIN_COMPROMISE_SUSPECTED -> "PIN may be compromised"
+            ChildSecuritySignal.VPN_STOPPED -> "VPN stopped"
+        }
+    }
+
+    private fun HardeningSetupSnapshot.isConfirmed(step: HardeningSetupStep): Boolean {
+        return itemFor(step).status.isConfirmedStatus()
+    }
+
+    private fun HardeningSetupStatus.isConfirmedStatus(): Boolean {
+        return when (this) {
+            HardeningSetupStatus.AUTO_CONFIRMED,
+            HardeningSetupStatus.USER_CONFIRMED,
+            HardeningSetupStatus.CONFIRMED_DISABLED,
+            HardeningSetupStatus.CONFIRMED_ABSENT,
+            HardeningSetupStatus.BEST_EFFORT_AUTO_CHECK,
+            HardeningSetupStatus.PARENT_CONFIRMED,
+            -> true
+            HardeningSetupStatus.NOT_STARTED,
+            HardeningSetupStatus.OPENED_SETTINGS,
+            HardeningSetupStatus.NEEDS_ATTENTION,
+            HardeningSetupStatus.NOT_SUPPORTED,
+            HardeningSetupStatus.UNKNOWN,
+            HardeningSetupStatus.COMPROMISE_SUSPECTED,
+            -> false
         }
     }
 

@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":core:pairing"))
     implementation(project(":core:policy"))
     implementation(project(":core:policy-sync"))
+    implementation(project(":core:status-report"))
     implementation(project(":features:child-status"))
     implementation(project(":features:setup-checklist"))
     implementation(project(":data:local"))
