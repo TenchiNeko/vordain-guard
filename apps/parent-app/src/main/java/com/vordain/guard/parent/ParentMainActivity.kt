@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
@@ -13,6 +14,9 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.vordain.guard.core.auditlog.VordainDebugPayloadEnvelope
+import com.vordain.guard.core.auditlog.VordainDebugPayloadEnvelopeCodec
+import com.vordain.guard.core.auditlog.VordainDebugPayloadKind
 import com.vordain.guard.core.model.DeviceId
 import com.vordain.guard.core.model.DomainName
 import com.vordain.guard.core.model.PolicyId
@@ -67,10 +71,12 @@ class ParentMainActivity : Activity() {
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
     private val childSecurityReportCodec = DebugChildSecurityReportCodec()
     private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
+    private val debugPayloadEnvelopeCodec = VordainDebugPayloadEnvelopeCodec()
     private val policyPresetFactory = PolicyPresetFactory()
     private val policyPreviewEngine = DefaultPolicyEngine()
     private val encryptedDnsResolverSeedList = EncryptedDnsResolverSeedList()
     private lateinit var stateStore: ParentDebugStateStore
+    private lateinit var reportHistoryStore: ParentReportHistoryStore
     private lateinit var targetDeviceInput: EditText
     private lateinit var policyVersionInput: EditText
     private lateinit var allowDomainsInput: EditText
@@ -96,6 +102,7 @@ class ParentMainActivity : Activity() {
     private lateinit var childSecurityReportOutput: TextView
     private lateinit var bypassRiskReportInput: EditText
     private lateinit var bypassRiskReportOutput: TextView
+    private lateinit var reportHistoryOutput: TextView
     private var lastPayload: String = ""
     private var lastPairingInvitePayload: String = ""
     private var lastPairingAcceptancePayload: String = ""
@@ -107,10 +114,13 @@ class ParentMainActivity : Activity() {
     private var lastBypassRiskReportPayload: String = ""
     private var decodedBypassRiskReport: DebugBypassRiskReport? = null
     private var selectedPolicyPreset: PolicyPreset = PolicyPreset.BASIC_DNS_GUARD
+    private var reportHistory: List<ParentReportHistoryEntry> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         stateStore = ParentDebugStateStore(this)
+        reportHistoryStore = ParentReportHistoryStore(this)
+        reportHistory = reportHistoryStore.load()
         setContentView(createView())
     }
 
@@ -128,6 +138,17 @@ class ParentMainActivity : Activity() {
         layout.addView(centerLabel("Vordain Guard Parent", 28f))
         layout.addView(centerLabel("Debug policy handoff", 18f))
         layout.addView(centerLabel("Local debug only - no server delivery.", 16f))
+        layout.addView(sectionTitle("Recommended local MVP order"))
+        layout.addView(valueLabel(
+            listOf(
+                "1. Create pairing invite.",
+                "2. Build DNS policy.",
+                "3. Review hardening report.",
+                "4. Review child status report.",
+                "5. Adjust policy.",
+            ).joinToString(separator = "\n"),
+            14f,
+        ))
 
         val snapshot = stateStore.load()
         lastPayload = snapshot.latestGeneratedPayload.orEmpty()
@@ -167,6 +188,9 @@ class ParentMainActivity : Activity() {
         })
         layout.addView(button("Copy pairing invite") {
             copyPairingInvite()
+        })
+        layout.addView(button("Share pairing invite") {
+            sharePairingInvite()
         })
         layout.addView(labeledField("Paste child acceptance", childAcceptanceInput))
         layout.addView(button("Verify child acceptance") {
@@ -209,6 +233,9 @@ class ParentMainActivity : Activity() {
         layout.addView(button("Copy debug policy update") {
             copyPayload()
         })
+        layout.addView(button("Share debug policy update") {
+            sharePolicyPayload()
+        })
         layout.addView(sectionTitle("Policy preview"))
         policyPreviewDomainInput = editText("blocked.example")
         layout.addView(labeledField("Test domain", policyPreviewDomainInput))
@@ -231,6 +258,9 @@ class ParentMainActivity : Activity() {
         layout.addView(button("Decode setup report") {
             decodeHardeningSetupReport()
         })
+        layout.addView(button("Share latest setup report") {
+            shareLatestSetupReport()
+        })
         setupReportOutput = valueLabel(createHardeningSetupOutput(), 14f)
         layout.addView(setupReportOutput)
 
@@ -245,6 +275,9 @@ class ParentMainActivity : Activity() {
         layout.addView(button("Clear status report") {
             clearChildSecurityStatusReport()
         })
+        layout.addView(button("Share latest status report") {
+            shareLatestChildSecurityStatusReport()
+        })
         childSecurityReportOutput = valueLabel(createChildSecurityStatusOutput(), 14f)
         layout.addView(childSecurityReportOutput)
 
@@ -258,8 +291,27 @@ class ParentMainActivity : Activity() {
         layout.addView(button("Clear bypass-risk report") {
             clearBypassRiskReport()
         })
+        layout.addView(button("Share latest bypass-risk report") {
+            shareLatestBypassRiskReport()
+        })
         bypassRiskReportOutput = valueLabel(createBypassRiskOutput(), 14f)
         layout.addView(bypassRiskReportOutput)
+
+        layout.addView(sectionTitle("Local report history"))
+        layout.addView(valueLabel("Local debug history only.", 14f))
+        layout.addView(valueLabel("Production sync will use encrypted relay later.", 14f))
+        layout.addView(valueLabel("No PINs or account secrets.", 14f))
+        layout.addView(button("Copy latest report") {
+            copyLatestHistoryEntry()
+        })
+        layout.addView(button("Share latest report") {
+            shareLatestHistoryEntry()
+        })
+        layout.addView(button("Clear report history") {
+            clearReportHistory()
+        })
+        reportHistoryOutput = valueLabel(createReportHistoryDisplay(), 14f)
+        layout.addView(reportHistoryOutput)
 
         return ScrollView(this).apply { addView(layout) }
     }
@@ -287,6 +339,13 @@ class ParentMainActivity : Activity() {
         pairingOutput.text = result.getOrElse { throwable ->
             "Could not build pairing invite: ${throwable.message}"
         }
+        if (result.isSuccess) {
+            appendReportHistory(
+                type = "PAIRING_INVITE",
+                title = "Pairing invite",
+                payload = lastPairingInvitePayload,
+            )
+        }
         stateStore.save(createSnapshot())
     }
 
@@ -301,6 +360,17 @@ class ParentMainActivity : Activity() {
         clipboard.setPrimaryClip(ClipData.newPlainText("Vordain debug pairing invite", lastPairingInvitePayload))
         pairingOutput.text = "$lastPairingInvitePayload\n\nCopied debug pairing invite."
         stateStore.save(createSnapshot())
+    }
+
+    private fun sharePairingInvite() {
+        if (lastPairingInvitePayload.isBlank()) {
+            buildPairingInvite()
+        }
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.PAIRING_INVITE,
+            title = "Share Vordain pairing invite",
+            payload = lastPairingInvitePayload,
+        )
     }
 
     private fun verifyChildAcceptance() {
@@ -323,6 +393,11 @@ class ParentMainActivity : Activity() {
                     "Display name: ${pairedChild.displayName}",
                     "Fingerprint: ${pairedChild.publicKeyFingerprint.value}",
                 ).joinToString(separator = "\n")
+                appendReportHistory(
+                    type = "PAIRING_ACCEPTANCE",
+                    title = "Pairing acceptance",
+                    payload = lastPairingAcceptancePayload,
+                )
             }
             "Pairing result: ${result.status}\nReason: ${result.reason}\n${acceptedChildSummary.orEmpty()}"
         } else {
@@ -367,6 +442,11 @@ class ParentMainActivity : Activity() {
         }
         if (result.isSuccess) {
             payloadOutput.text = "${result.getOrDefault("")}\n\n${createPolicySummary()}"
+            appendReportHistory(
+                type = "POLICY_UPDATE",
+                title = "Debug DNS policy update",
+                payload = lastPayload,
+            )
         }
         stateStore.save(createSnapshot())
     }
@@ -382,6 +462,17 @@ class ParentMainActivity : Activity() {
         clipboard.setPrimaryClip(ClipData.newPlainText("Vordain debug policy update", lastPayload))
         payloadOutput.text = "$lastPayload\n\nCopied debug policy update."
         stateStore.save(createSnapshot())
+    }
+
+    private fun sharePolicyPayload() {
+        if (lastPayload.isBlank()) {
+            buildDebugPolicyUpdate()
+        }
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.POLICY_UPDATE,
+            title = "Share Vordain DNS policy update",
+            payload = lastPayload,
+        )
     }
 
     private fun createSnapshot(): ParentDebugStateSnapshot {
@@ -414,6 +505,11 @@ class ParentMainActivity : Activity() {
         setupReportOutput.text = when (val result = hardeningSetupReportCodec.decode(lastHardeningSetupReportPayload)) {
             is DebugHardeningSetupReportCodecResult.Decoded -> {
                 decodedHardeningSetupReport = result.snapshot
+                appendReportHistory(
+                    type = "SETUP_REPORT",
+                    title = "Child hardening setup report",
+                    payload = lastHardeningSetupReportPayload,
+                )
                 createHardeningSetupOutput()
             }
             is DebugHardeningSetupReportCodecResult.Rejected -> {
@@ -422,6 +518,14 @@ class ParentMainActivity : Activity() {
             }
         }
         stateStore.save(createSnapshot())
+    }
+
+    private fun shareLatestSetupReport() {
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.SETUP_REPORT,
+            title = "Share Vordain setup report",
+            payload = lastHardeningSetupReportPayload,
+        )
     }
 
     private fun createHardeningSetupOutput(): String {
@@ -466,6 +570,11 @@ class ParentMainActivity : Activity() {
         childSecurityReportOutput.text = when (val result = childSecurityReportCodec.decode(lastChildSecurityStatusReportPayload)) {
             is DebugChildSecurityReportCodecResult.Decoded -> {
                 decodedChildSecurityStatusReport = result.report
+                appendReportHistory(
+                    type = "CHILD_STATUS_REPORT",
+                    title = "Child security status report",
+                    payload = lastChildSecurityStatusReportPayload,
+                )
                 createChildSecurityStatusOutput()
             }
             is DebugChildSecurityReportCodecResult.Rejected -> {
@@ -474,6 +583,14 @@ class ParentMainActivity : Activity() {
             }
         }
         stateStore.save(createSnapshot())
+    }
+
+    private fun shareLatestChildSecurityStatusReport() {
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.CHILD_STATUS_REPORT,
+            title = "Share Vordain child status report",
+            payload = lastChildSecurityStatusReportPayload,
+        )
     }
 
     private fun clearChildSecurityStatusReport() {
@@ -524,6 +641,11 @@ class ParentMainActivity : Activity() {
         bypassRiskReportOutput.text = when (val result = bypassRiskReportCodec.decode(lastBypassRiskReportPayload)) {
             is DebugBypassRiskReportCodecResult.Decoded -> {
                 decodedBypassRiskReport = result.report
+                appendReportHistory(
+                    type = "BYPASS_REPORT",
+                    title = "DNS-only bypass-risk report",
+                    payload = lastBypassRiskReportPayload,
+                )
                 createBypassRiskOutput()
             }
             is DebugBypassRiskReportCodecResult.Rejected -> {
@@ -532,6 +654,14 @@ class ParentMainActivity : Activity() {
             }
         }
         stateStore.save(createSnapshot())
+    }
+
+    private fun shareLatestBypassRiskReport() {
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.BYPASS_REPORT,
+            title = "Share Vordain bypass-risk report",
+            payload = lastBypassRiskReportPayload,
+        )
     }
 
     private fun clearBypassRiskReport() {
@@ -572,6 +702,107 @@ class ParentMainActivity : Activity() {
             acceptedChildSummary != null -> "Paired child summary:\n$acceptedChildSummary"
             lastPairingInvitePayload.isNotBlank() -> lastPairingInvitePayload
             else -> "No debug pairing invite built yet"
+        }
+    }
+
+    private fun appendReportHistory(
+        type: String,
+        title: String,
+        payload: String,
+    ) {
+        if (payload.isBlank() || !::reportHistoryStore.isInitialized) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        val entry = ParentReportHistoryEntry(
+            id = "$now-$type",
+            type = type,
+            createdAtMillis = now,
+            title = title,
+            payload = payload,
+        )
+        reportHistory = (listOf(entry) + reportHistory).take(ParentReportHistoryStore.MAX_ENTRIES)
+        reportHistoryStore.save(reportHistory)
+        if (::reportHistoryOutput.isInitialized) {
+            reportHistoryOutput.text = createReportHistoryDisplay()
+        }
+    }
+
+    private fun createReportHistoryDisplay(): String {
+        if (reportHistory.isEmpty()) {
+            return "No local report history yet\nLocal debug history only.\nProduction sync will use encrypted relay later."
+        }
+        return buildString {
+            append("Local debug history only.\n")
+            append("Production sync will use encrypted relay later.\n")
+            reportHistory.take(REPORT_HISTORY_DISPLAY_COUNT).forEach { entry ->
+                append("${entry.createdAtMillis} / ${entry.type}\n")
+                append("${entry.title}\n")
+            }
+        }.trimEnd()
+    }
+
+    private fun copyLatestHistoryEntry() {
+        val entry = reportHistory.firstOrNull() ?: return
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain local debug report", entry.payload))
+        reportHistoryOutput.text = "${createReportHistoryDisplay()}\n\nCopied latest report."
+    }
+
+    private fun shareLatestHistoryEntry() {
+        val entry = reportHistory.firstOrNull() ?: return
+        shareEnvelope(
+            kind = entry.type.toPayloadKind(),
+            title = "Share Vordain local report",
+            payload = entry.payload,
+        )
+    }
+
+    private fun clearReportHistory() {
+        reportHistory = emptyList()
+        reportHistoryStore.save(reportHistory)
+        reportHistoryOutput.text = createReportHistoryDisplay()
+    }
+
+    private fun shareEnvelope(
+        kind: VordainDebugPayloadKind,
+        title: String,
+        payload: String,
+    ) {
+        if (payload.isBlank()) {
+            return
+        }
+        val envelope = debugPayloadEnvelopeCodec.encode(
+            VordainDebugPayloadEnvelope(
+                kind = kind,
+                version = 1,
+                createdAtMillis = System.currentTimeMillis(),
+                payloadText = "Local debug export\n$payload",
+            ),
+        )
+        shareText(title = title, text = envelope)
+    }
+
+    private fun shareText(
+        title: String,
+        text: String,
+    ) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(intent, title))
+    }
+
+    private fun String.toPayloadKind(): VordainDebugPayloadKind {
+        return when (this) {
+            "PAIRING_INVITE" -> VordainDebugPayloadKind.PAIRING_INVITE
+            "PAIRING_ACCEPTANCE" -> VordainDebugPayloadKind.PAIRING_ACCEPTANCE
+            "POLICY_UPDATE" -> VordainDebugPayloadKind.POLICY_UPDATE
+            "SETUP_REPORT" -> VordainDebugPayloadKind.SETUP_REPORT
+            "BYPASS_REPORT" -> VordainDebugPayloadKind.BYPASS_REPORT
+            "CHILD_STATUS_REPORT" -> VordainDebugPayloadKind.CHILD_STATUS_REPORT
+            else -> VordainDebugPayloadKind.DIAGNOSTICS
         }
     }
 
@@ -883,6 +1114,7 @@ class ParentMainActivity : Activity() {
 
     private companion object {
         const val DEBUG_UPDATE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
+        const val REPORT_HISTORY_DISPLAY_COUNT = 12
         val defaultPairingCapabilities = setOf(
             PairingCapability.POLICY_UPDATES,
             PairingCapability.HEARTBEAT_STATUS,

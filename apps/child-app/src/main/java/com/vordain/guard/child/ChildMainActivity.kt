@@ -15,6 +15,14 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.vordain.guard.core.auditlog.AuditEntry
+import com.vordain.guard.core.auditlog.AuditEntryType
+import com.vordain.guard.core.auditlog.AuditSeverity
+import com.vordain.guard.core.auditlog.AuditTimeline
+import com.vordain.guard.core.auditlog.AuditTimelineReducer
+import com.vordain.guard.core.auditlog.VordainDebugPayloadEnvelope
+import com.vordain.guard.core.auditlog.VordainDebugPayloadEnvelopeCodec
+import com.vordain.guard.core.auditlog.VordainDebugPayloadKind
 import com.vordain.guard.core.model.AppTrafficMode
 import com.vordain.guard.core.model.DeviceId
 import com.vordain.guard.core.model.DomainName
@@ -81,6 +89,8 @@ class ChildMainActivity : Activity() {
     private val reviewDemo = ChildDebugReviewDemo()
     private val policyHandoff = ChildDebugPolicyHandoff { System.currentTimeMillis() }
     private val diagnosticsFormatter = ChildDebugDiagnosticsFormatter()
+    private val auditTimelineReducer = AuditTimelineReducer()
+    private val debugPayloadEnvelopeCodec = VordainDebugPayloadEnvelopeCodec()
     private val hardeningSetupReducer = HardeningSetupReducer()
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
     private val childSecurityStatusEvaluator = ChildSecurityStatusEvaluator()
@@ -89,6 +99,7 @@ class ChildMainActivity : Activity() {
     private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
     private val dnsOnlyReadinessEvaluator = DnsOnlyReadinessEvaluator()
     private lateinit var stateStore: ChildDebugStateStore
+    private lateinit var auditStore: ChildAuditStateStore
     private lateinit var statusText: TextView
     private lateinit var vpnPermissionText: TextView
     private lateinit var lastCommandText: TextView
@@ -114,6 +125,7 @@ class ChildMainActivity : Activity() {
     private lateinit var reviewOutputText: TextView
     private lateinit var localEventsText: TextView
     private lateinit var diagnosticsText: TextView
+    private lateinit var auditTimelineText: TextView
     private var vpnPermissionStatus: String = ChildVpnSmokeLabels.PERMISSION_UNKNOWN
     private var lastCommand: String = ChildVpnSmokeLabels.COMMAND_NONE
     private var shellStatus: String = ChildVpnSmokeLabels.STATUS_NOT_RUNNING
@@ -153,10 +165,13 @@ class ChildMainActivity : Activity() {
     private var compatibilityResult: ChildDebugCompatibilityResult? = null
     private var reviewResult: ChildDebugReviewResult? = null
     private val localDebugEvents = mutableListOf<String>()
+    private var auditTimeline: AuditTimeline = AuditTimeline()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         stateStore = ChildDebugStateStore(this)
+        auditStore = ChildAuditStateStore(this)
+        auditTimeline = auditStore.load()
         restoreState(stateStore.load())
         setContentView(createSmokeTestView())
         statusText.text = shellStatus
@@ -273,6 +288,9 @@ class ChildMainActivity : Activity() {
         layout.addView(button("Copy DNS-only diagnostics") {
             copyDiagnostics()
         })
+        layout.addView(button("Share DNS-only diagnostics") {
+            shareDiagnostics()
+        })
 
         layout.addView(sectionTitle("DNS bypass hardening"))
         layout.addView(valueLabel("Turn off Android Private DNS or set it to a parent-approved provider.", textSize = 14f))
@@ -338,6 +356,9 @@ class ChildMainActivity : Activity() {
         })
         layout.addView(button("Copy bypass-risk report") {
             copyBypassRiskReport()
+        })
+        layout.addView(button("Share bypass-risk report") {
+            shareBypassRiskReport()
         })
         bypassRiskText = valueLabel(createBypassRiskDisplay(), textSize = 14f)
         layout.addView(bypassRiskText)
@@ -524,6 +545,9 @@ class ChildMainActivity : Activity() {
         layout.addView(button("Copy setup report") {
             copyHardeningSetupReport()
         })
+        layout.addView(button("Share setup report") {
+            shareHardeningSetupReport()
+        })
         layout.addView(button("Clear setup confirmations") {
             clearHardeningSetup()
         })
@@ -535,6 +559,9 @@ class ChildMainActivity : Activity() {
         })
         layout.addView(button("Copy status report") {
             copyChildSecurityStatusReport()
+        })
+        layout.addView(button("Share status report") {
+            shareChildSecurityStatusReport()
         })
         layout.addView(button("Refresh status report") {
             refreshChildSecurityStatusReport()
@@ -571,6 +598,9 @@ class ChildMainActivity : Activity() {
         layout.addView(button("Copy active policy diagnostics") {
             copyActivePolicyDiagnostics()
         })
+        layout.addView(button("Share active policy diagnostics") {
+            shareActivePolicyDiagnostics()
+        })
         policyHandoffOutputText = valueLabel(
             createActivePolicyDisplay(),
             textSize = 14f,
@@ -590,6 +620,9 @@ class ChildMainActivity : Activity() {
         })
         layout.addView(button("Copy child acceptance") {
             copyChildAcceptance()
+        })
+        layout.addView(button("Share child acceptance") {
+            shareChildAcceptance()
         })
         layout.addView(button("Clear pairing result") {
             clearPairingResult()
@@ -631,8 +664,26 @@ class ChildMainActivity : Activity() {
         layout.addView(button(ChildVpnSmokeLabels.COPY_DIAGNOSTICS_BUTTON) {
             copyDiagnostics()
         })
+        layout.addView(button("Share diagnostics") {
+            shareDiagnostics()
+        })
         layout.addView(localEventsText)
         layout.addView(diagnosticsText)
+
+        layout.addView(sectionTitle("Local audit timeline"))
+        layout.addView(valueLabel("Local explicit app-action timeline only.", textSize = 14f))
+        layout.addView(valueLabel("No web history or packet logs.", textSize = 14f))
+        layout.addView(button("Copy audit summary") {
+            copyAuditSummary()
+        })
+        layout.addView(button("Share audit summary") {
+            shareAuditSummary()
+        })
+        layout.addView(button("Clear local audit timeline") {
+            clearAuditTimeline()
+        })
+        auditTimelineText = valueLabel(createAuditTimelineDisplay(), textSize = 13f)
+        layout.addView(auditTimelineText)
         refreshDiagnosticsViews()
         return ScrollView(this).apply {
             addView(layout)
@@ -727,6 +778,12 @@ class ChildMainActivity : Activity() {
     }
 
     private fun requestVpnPermission() {
+        recordAudit(
+            type = AuditEntryType.VPN_PERMISSION_REQUESTED,
+            severity = AuditSeverity.INFO,
+            title = "VPN permission requested",
+            detail = "Parent opened or reviewed the Android VPN permission flow.",
+        )
         setLastCommand(ChildVpnSmokeLabels.COMMAND_PERMISSION_REQUESTED)
         when (val result = vpnPermissionIntentFactory.createPrepareResult(this)) {
             VpnPrepareResult.AlreadyGranted -> {
@@ -765,6 +822,12 @@ class ChildMainActivity : Activity() {
                 } else {
                     startService(intent)
                 }
+                recordAudit(
+                    type = AuditEntryType.VPN_SHELL_STARTED,
+                    severity = AuditSeverity.INFO,
+                    title = "VPN shell started",
+                    detail = "Establish-only VPN shell command was sent.",
+                )
                 setShellStatus(ChildVpnSmokeLabels.STATUS_SHELL_COMMAND_SENT)
                 setStatus(ChildVpnSmokeLabels.STATUS_SHELL_ACTIVE)
             }
@@ -797,6 +860,12 @@ class ChildMainActivity : Activity() {
                 } else {
                     startService(intent)
                 }
+                recordAudit(
+                    type = AuditEntryType.FULL_TUNNEL_LAB_STARTED,
+                    severity = AuditSeverity.WARNING,
+                    title = "Full-tunnel lab started",
+                    detail = "Full-tunnel lab command was sent; packets are local lab handled.",
+                )
                 setStatus(ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_ACTIVE)
             }
             is VpnPrepareResult.ConsentRequired -> {
@@ -812,6 +881,12 @@ class ChildMainActivity : Activity() {
         setLastCommand(ChildVpnSmokeLabels.COMMAND_LAB_STOP_SENT)
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOP_COMMAND_SENT)
         startService(VordainVpnServiceIntents.stopLabCapture(this))
+        recordAudit(
+            type = AuditEntryType.FULL_TUNNEL_LAB_STOPPED,
+            severity = AuditSeverity.INFO,
+            title = "Full-tunnel lab stopped",
+            detail = "Full-tunnel lab stop command was sent.",
+        )
         setStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
     }
@@ -828,6 +903,12 @@ class ChildMainActivity : Activity() {
                 } else {
                     startService(intent)
                 }
+                recordAudit(
+                    type = AuditEntryType.DNS_ONLY_LAB_STARTED,
+                    severity = AuditSeverity.INFO,
+                    title = "DNS-only lab started",
+                    detail = "DNS-only lab filtering command was sent.",
+                )
                 setStatus(ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_ACTIVE)
             }
             is VpnPrepareResult.ConsentRequired -> {
@@ -843,6 +924,12 @@ class ChildMainActivity : Activity() {
         setLastCommand(ChildVpnSmokeLabels.COMMAND_DNS_ONLY_STOP_SENT)
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOP_COMMAND_SENT)
         startService(VordainVpnServiceIntents.stopDnsOnlyLab(this))
+        recordAudit(
+            type = AuditEntryType.DNS_ONLY_LAB_STOPPED,
+            severity = AuditSeverity.INFO,
+            title = "DNS-only lab stopped",
+            detail = "DNS-only lab stop command was sent.",
+        )
         setStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
     }
@@ -884,8 +971,25 @@ class ChildMainActivity : Activity() {
         clipboard.setPrimaryClip(
             ClipData.newPlainText("Vordain debug hardening setup report", latestHardeningSetupReportPayload.orEmpty()),
         )
+        recordAudit(
+            type = AuditEntryType.SETUP_REPORT_GENERATED,
+            severity = AuditSeverity.INFO,
+            title = "Setup report copied",
+            detail = "Parent-confirmed setup report was copied locally.",
+        )
         saveCurrentState()
         refreshDiagnosticsViews()
+    }
+
+    private fun shareHardeningSetupReport() {
+        if (latestHardeningSetupReportPayload.isNullOrBlank()) {
+            copyHardeningSetupReport()
+        }
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.SETUP_REPORT,
+            title = "Share Vordain setup report",
+            payload = latestHardeningSetupReportPayload.orEmpty(),
+        )
     }
 
     private fun clearHardeningSetup() {
@@ -945,7 +1049,24 @@ class ChildMainActivity : Activity() {
         if (::bypassRiskText.isInitialized) {
             bypassRiskText.text = "${createBypassRiskDisplay()}\n\nCopied bypass-risk report."
         }
+        recordAudit(
+            type = AuditEntryType.BYPASS_REPORT_GENERATED,
+            severity = AuditSeverity.INFO,
+            title = "Bypass-risk report copied",
+            detail = "DNS-only bypass-risk report was copied locally.",
+        )
         saveCurrentState()
+    }
+
+    private fun shareBypassRiskReport() {
+        if (latestBypassRiskReportPayload.isNullOrBlank()) {
+            generateBypassRiskReport()
+        }
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.BYPASS_REPORT,
+            title = "Share Vordain bypass-risk report",
+            payload = latestBypassRiskReportPayload.orEmpty(),
+        )
     }
 
     private fun startParentMaintenanceWindow() {
@@ -961,6 +1082,12 @@ class ChildMainActivity : Activity() {
             currentTimeMillis = now,
         )
         latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(currentHardeningSetupSnapshot())
+        recordAudit(
+            type = AuditEntryType.MAINTENANCE_WINDOW_STARTED,
+            severity = AuditSeverity.INFO,
+            title = "Parent maintenance window started",
+            detail = "Parent-authorized setup window was opened.",
+        )
         saveCurrentState()
         refreshDiagnosticsViews()
     }
@@ -971,6 +1098,12 @@ class ChildMainActivity : Activity() {
             currentTimeMillis = System.currentTimeMillis(),
         )
         latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(currentHardeningSetupSnapshot())
+        recordAudit(
+            type = AuditEntryType.MAINTENANCE_WINDOW_ENDED,
+            severity = AuditSeverity.INFO,
+            title = "Parent maintenance window ended",
+            detail = "Parent-authorized setup window was closed.",
+        )
         saveCurrentState()
         refreshDiagnosticsViews()
     }
@@ -986,6 +1119,12 @@ class ChildMainActivity : Activity() {
             currentTimeMillis = System.currentTimeMillis(),
         )
         latestHardeningSetupReportPayload = hardeningSetupReportCodec.encode(currentHardeningSetupSnapshot())
+        recordAudit(
+            type = AuditEntryType.PIN_COMPROMISE_SIGNAL,
+            severity = AuditSeverity.HIGH,
+            title = "PIN compromise signal",
+            detail = "Hardening changed outside a parent maintenance window.",
+        )
         saveCurrentState()
         refreshDiagnosticsViews()
     }
@@ -1021,8 +1160,20 @@ class ChildMainActivity : Activity() {
             currentPolicyBlockEncryptedDnsResolvers = result.blockEncryptedDnsResolvers
             lastPolicyVerificationResult = result.reason
             LabCaptureDebugStatus.useVerifiedPolicy(result.policy)
+            recordAudit(
+                type = AuditEntryType.POLICY_PAYLOAD_APPLIED,
+                severity = AuditSeverity.INFO,
+                title = "Policy payload applied",
+                detail = "Verified debug DNS policy ${result.policyVersion.value} was applied.",
+            )
         } else {
             lastPolicyVerificationResult = result.reason
+            recordAudit(
+                type = AuditEntryType.POLICY_PAYLOAD_REJECTED,
+                severity = AuditSeverity.WARNING,
+                title = "Policy payload rejected",
+                detail = "Debug DNS policy payload was rejected: ${result.reason}.",
+            )
         }
         policyHandoffOutputText.text = "${result.asDisplayText()}\n\n${createActivePolicyDisplay()}"
         saveCurrentState()
@@ -1076,7 +1227,21 @@ class ChildMainActivity : Activity() {
             ),
         )
         policyHandoffOutputText.text = "${createActivePolicyDisplay()}\n\nCopied active policy diagnostics."
+        recordAudit(
+            type = AuditEntryType.DIAGNOSTICS_COPIED,
+            severity = AuditSeverity.INFO,
+            title = "Active policy diagnostics copied",
+            detail = "Active DNS-only lab policy diagnostics were copied locally.",
+        )
         saveCurrentState()
+    }
+
+    private fun shareActivePolicyDiagnostics() {
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.DIAGNOSTICS,
+            title = "Share Vordain active policy diagnostics",
+            payload = createActivePolicyDisplay(),
+        )
     }
 
     private fun acceptPairingInvite() {
@@ -1148,6 +1313,19 @@ class ChildMainActivity : Activity() {
         saveCurrentState()
     }
 
+    private fun shareChildAcceptance() {
+        val acceptancePayload = latestPairingAcceptancePayload
+        if (acceptancePayload.isNullOrBlank()) {
+            pairingOutputText.text = "No child acceptance payload is available yet"
+            return
+        }
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.PAIRING_ACCEPTANCE,
+            title = "Share Vordain pairing acceptance",
+            payload = acceptancePayload,
+        )
+    }
+
     private fun clearPairingResult() {
         latestPairingAcceptancePayload = null
         acceptedParentSummary = null
@@ -1213,7 +1391,128 @@ class ChildMainActivity : Activity() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Vordain Guard diagnostics", diagnostics))
         diagnosticsText.text = ChildVpnSmokeLabels.DIAGNOSTICS_COPIED
+        recordAudit(
+            type = AuditEntryType.DIAGNOSTICS_COPIED,
+            severity = AuditSeverity.INFO,
+            title = "Diagnostics copied",
+            detail = "Local MVP diagnostics were copied.",
+        )
         saveCurrentState()
+    }
+
+    private fun shareDiagnostics() {
+        val diagnostics = diagnosticsFormatter.format(
+            diagnostics = createDiagnostics(),
+            state = createDashboardState(),
+        )
+        lastDiagnosticsText = diagnostics
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.DIAGNOSTICS,
+            title = "Share Vordain diagnostics",
+            payload = diagnostics,
+        )
+    }
+
+    private fun copyAuditSummary() {
+        val summary = createAuditTimelineDisplay()
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain local debug audit summary", summary))
+        recordAudit(
+            type = AuditEntryType.DIAGNOSTICS_COPIED,
+            severity = AuditSeverity.INFO,
+            title = "Audit summary copied",
+            detail = "Local MVP audit summary was copied.",
+        )
+    }
+
+    private fun shareAuditSummary() {
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.DIAGNOSTICS,
+            title = "Share Vordain audit summary",
+            payload = createAuditTimelineDisplay(),
+        )
+    }
+
+    private fun clearAuditTimeline() {
+        auditTimeline = auditTimelineReducer.clear(auditTimeline)
+        auditStore.save(auditTimeline)
+        if (::auditTimelineText.isInitialized) {
+            auditTimelineText.text = createAuditTimelineDisplay()
+        }
+    }
+
+    private fun recordAudit(
+        type: AuditEntryType,
+        severity: AuditSeverity,
+        title: String,
+        detail: String,
+    ) {
+        if (!::auditStore.isInitialized) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        auditTimeline = auditTimelineReducer.append(
+            timeline = auditTimeline,
+            entry = AuditEntry(
+                id = "$now-${type.name}",
+                type = type,
+                severity = severity,
+                occurredAtMillis = now,
+                title = title,
+                detail = detail,
+                deviceId = DeviceId(childDeviceId),
+            ),
+            maxEntries = AUDIT_MAX_ENTRIES,
+        )
+        auditStore.save(auditTimeline)
+        if (::auditTimelineText.isInitialized) {
+            auditTimelineText.text = createAuditTimelineDisplay()
+        }
+    }
+
+    private fun createAuditTimelineDisplay(): String {
+        val entries = auditTimelineReducer.latest(auditTimeline, AUDIT_DISPLAY_COUNT)
+        if (entries.isEmpty()) {
+            return "No local audit entries yet\nLocal explicit app-action timeline only.\nNo web history or packet logs."
+        }
+        return buildString {
+            append("Local explicit app-action timeline only.\n")
+            append("No web history or packet logs.\n")
+            entries.forEach { entry ->
+                append("${entry.occurredAtMillis} / ${entry.severity} / ${entry.type}\n")
+                append("${entry.title}: ${entry.detail}\n")
+            }
+        }.trimEnd()
+    }
+
+    private fun shareEnvelope(
+        kind: VordainDebugPayloadKind,
+        title: String,
+        payload: String,
+    ) {
+        if (payload.isBlank()) {
+            return
+        }
+        val envelope = debugPayloadEnvelopeCodec.encode(
+            VordainDebugPayloadEnvelope(
+                kind = kind,
+                version = 1,
+                createdAtMillis = System.currentTimeMillis(),
+                payloadText = "Local debug export\n$payload",
+            ),
+        )
+        shareText(title = title, text = envelope)
+    }
+
+    private fun shareText(
+        title: String,
+        text: String,
+    ) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(intent, title))
     }
 
     private fun refreshDiagnosticsViews() {
@@ -1248,6 +1547,9 @@ class ChildMainActivity : Activity() {
         }
         if (::labCaptureText.isInitialized) {
             labCaptureText.text = createLabCaptureDisplay(LabCaptureDebugStatus.snapshot())
+        }
+        if (::auditTimelineText.isInitialized) {
+            auditTimelineText.text = createAuditTimelineDisplay()
         }
     }
 
@@ -1381,6 +1683,12 @@ class ChildMainActivity : Activity() {
         latestChildSecurityStatusReport = report
         latestChildSecurityStatusReportPayload = childSecurityReportCodec.encode(report)
         childSecurityStatusText.text = createChildSecurityStatusDisplay(report)
+        recordAudit(
+            type = AuditEntryType.STATUS_REPORT_GENERATED,
+            severity = AuditSeverity.INFO,
+            title = "Child status report generated",
+            detail = "Parent-visible child security status report was generated.",
+        )
         saveCurrentState()
     }
 
@@ -1396,6 +1704,17 @@ class ChildMainActivity : Activity() {
         clipboard.setPrimaryClip(ClipData.newPlainText("Vordain child security status report", payload))
         childSecurityStatusText.text = "${createChildSecurityStatusDisplay(currentChildSecurityStatusReport())}\n\nCopied status report."
         saveCurrentState()
+    }
+
+    private fun shareChildSecurityStatusReport() {
+        if (latestChildSecurityStatusReportPayload.isNullOrBlank()) {
+            generateChildSecurityStatusReport()
+        }
+        shareEnvelope(
+            kind = VordainDebugPayloadKind.CHILD_STATUS_REPORT,
+            title = "Share Vordain child status report",
+            payload = latestChildSecurityStatusReportPayload.orEmpty(),
+        )
     }
 
     private fun refreshChildSecurityStatusReport() {
@@ -1553,6 +1872,12 @@ class ChildMainActivity : Activity() {
             currentPolicyBlockEncryptedDnsResolvers = decodedUpdate?.blockEncryptedDnsResolvers ?: true
             lastPolicyVerificationResult = restored.reason.toString()
             LabCaptureDebugStatus.useVerifiedPolicy(restoredPolicy)
+            recordAudit(
+                type = AuditEntryType.POLICY_RESTORED,
+                severity = AuditSeverity.INFO,
+                title = "Policy restored",
+                detail = "Verified debug DNS policy ${restoredPolicyVersion.value} was restored.",
+            )
         } else {
             currentPolicySource = "Persisted policy rejected: ${restored.reason}"
             currentPolicyPresetName = null
@@ -1561,6 +1886,12 @@ class ChildMainActivity : Activity() {
             lastPolicyVerificationResult = restored.reason.toString()
             policyDemo.resetToDefault()
             LabCaptureDebugStatus.useDefaultPolicy()
+            recordAudit(
+                type = AuditEntryType.POLICY_PAYLOAD_REJECTED,
+                severity = AuditSeverity.WARNING,
+                title = "Stored policy rejected",
+                detail = "Stored debug DNS policy was rejected: ${restored.reason}.",
+            )
         }
     }
 
@@ -2053,6 +2384,8 @@ class ChildMainActivity : Activity() {
         const val REQUEST_VPN_PERMISSION = 1001
         const val MAINTENANCE_WINDOW_MILLIS = 15L * 60L * 1_000L
         const val ACTION_USER_SETTINGS = "android.settings.USER_SETTINGS"
+        const val AUDIT_MAX_ENTRIES = 40
+        const val AUDIT_DISPLAY_COUNT = 20
         val defaultPairingCapabilities = setOf(
             PairingCapability.POLICY_UPDATES,
             PairingCapability.HEARTBEAT_STATUS,

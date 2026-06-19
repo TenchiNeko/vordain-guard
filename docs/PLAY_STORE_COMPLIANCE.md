@@ -36,6 +36,17 @@ Avoid hidden surveillance language and avoid claims of absolute bypass preventio
 - If protection stops, parents are told
 - If the device stops reporting, parents are told that protection is no longer confirmed
 
+## Local MVP Disclosure Draft
+
+Current local MVP/debug builds should be described as DNS-only lab filtering and setup/report testing. Store-facing or tester-facing copy should say:
+
+- Filtering is not production-enabled yet.
+- DNS-only lab filtering can block normal DNS-based access for configured domains.
+- DNS-only lab filtering does not inspect non-DNS traffic.
+- DoH, direct-IP access, cached DNS, alternate VPN/proxy apps, and private browsers require hardening review.
+- Parent-visible reports are local copy/paste or explicit share exports until production sync exists.
+- No backend, relay delivery, billing, MDM, or production sync is enabled in the local MVP build.
+
 ## Safety Boundaries
 
 Vordain Guard must not include hidden spyware behavior, secret monitoring, screenshots, message-content monitoring, deceptive traffic routing, or covert traffic collection.

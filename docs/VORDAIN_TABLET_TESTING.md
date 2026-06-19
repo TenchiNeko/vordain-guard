@@ -16,6 +16,12 @@ The script builds debug APKs, copies them to `~/tablet-download`, writes `SHA256
 cd ~/tablet-download && python3 -m http.server 8080 --bind 192.168.68.81
 ```
 
+If APKs are already built, you can skip the Gradle build:
+
+```bash
+tools/export_debug_apks.sh --skip-build
+```
+
 ## Install From Tablet
 
 1. Connect the tablet to the same local network.
@@ -43,6 +49,28 @@ Expected behavior:
 * This does not block DoH, direct-IP bypasses, cached DNS, or non-DNS paths yet.
 * Filtering is not production-enabled yet.
 * This is not full protection.
+
+## Local MVP Flow
+
+Recommended parent app order:
+
+1. Create pairing invite.
+2. Build DNS policy.
+3. Review hardening report.
+4. Review child status report.
+5. Adjust policy.
+
+Recommended child app order:
+
+1. Pair/debug handoff.
+2. Request VPN permission.
+3. Complete hardening setup.
+4. Apply parent DNS policy.
+5. Run DNS-only lab test.
+6. Generate child status report.
+7. Parent reviews report.
+
+The local MVP uses copy/paste and explicit share buttons. Production sync is not enabled yet.
 
 ## Parent DNS Policy Editor
 
@@ -78,6 +106,14 @@ Apply and verify the parent-built policy in the child app:
 8. Start DNS-only lab; DNS decisions use the verified active policy when available.
 
 If the stored policy payload fails verification, the child app falls back to the default sample policy and reports the rejection reason. Summary fields are display-only; the signed debug payload remains the authority.
+
+## Reports, Sharing, and Local History
+
+The child app can copy or share local debug setup, bypass-risk, child status, diagnostics, active policy diagnostics, and audit summaries. The parent app can import child reports and keeps a bounded local report history for generated policy payloads, pairing payloads, setup reports, bypass-risk reports, and child status reports.
+
+The local audit timeline records explicit app actions such as starting DNS-only lab, applying a policy payload, generating reports, and copying diagnostics. It is not a passive monitor.
+
+QR-ready text envelopes are included around share payloads so they can later be encoded as QR content without adding a scanner dependency in this milestone.
 
 ## Policy Test Cases
 
@@ -116,3 +152,25 @@ Expected behavior:
 * Non-DNS traffic is not inspected or forwarded by Vordain in DNS-only mode.
 
 For stronger device hardening during tests, use Always-on VPN, Block without VPN, Settings/App Lock, Private DNS review, Developer Options/ADB off, no alternate VPN/proxy/private browsers, and no unrestricted profiles where the device supports those settings.
+
+## Full-Tunnel Lab Test
+
+Full-tunnel lab remains a separate explicit mode. It may interrupt normal internet access because packets are routed into Vordain lab handling. Use it only for device smoke testing, then stop it from the child app.
+
+DNS-only lab is the practical local MVP path for tablet testing because non-DNS traffic is not routed through Vordain in that mode.
+
+## Local MVP Limitations
+
+This build is not full protection:
+
+* No general TCP forwarding.
+* No non-DNS packet forwarding.
+* No backend or relay sync.
+* No production sync.
+* No MDM controls.
+* DNS-only mode does not inspect non-DNS traffic.
+* DNS-only mode does not fully handle DoH, direct-IP access, cached DNS, or app-level encrypted DNS without additional hardening.
+
+## Third-Party Notices
+
+No root `LICENSE` file is added by these local MVP steps. `THIRD_PARTY_NOTICES.md` is a non-exhaustive placeholder for development tooling and dependency notices, including Gradle wrapper/build tooling under Apache 2.0.

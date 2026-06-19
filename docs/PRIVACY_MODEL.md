@@ -34,6 +34,14 @@ Parent Review is parent-initiated and minimized. A parent may submit a specific 
 
 Entitlements and subscriptions are separate from child activity. Billing status should be represented by entitlement leases and feature flags, not by child traffic or alert contents.
 
+## Local MVP Debug Exports
+
+The local MVP build uses explicit copy/share actions for pairing, policy payloads, setup reports, bypass-risk reports, child status reports, diagnostics, and local audit summaries. These exports are user-triggered and local/debug only.
+
+The local audit timeline records explicit app actions such as starting DNS-only lab, applying a policy payload, generating reports, and copying diagnostics. It must not become passive browsing, packet-content, screenshot, message, account-secret, PIN, or telemetry collection.
+
+Production relay and backend sync are not enabled in the local MVP build.
+
 ## No Secret Monitoring
 
 Vordain Basic should be disclosed parental-control and family safety software. It should not be positioned as hidden monitoring software and should not secretly monitor children.
