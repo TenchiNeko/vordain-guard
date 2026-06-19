@@ -28,6 +28,7 @@ kotlin {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:policy"))
+    implementation(project(":core:policy-sync"))
     implementation(project(":features:child-status"))
     implementation(project(":features:setup-checklist"))
     implementation(project(":data:local"))

@@ -17,6 +17,10 @@ class ChildDebugDiagnosticsFormatter {
         state.policyResult?.let { result ->
             lines += "Policy demo: ${result.decision} / ${result.reason} / ${result.normalizedDomain ?: "none"}"
         }
+        lines += "Debug policy version: ${state.currentPolicyVersion}"
+        state.policyHandoffResult?.let { result ->
+            lines += "Policy handoff: ${result.reason} / ${result.policyVersion?.value ?: "unchanged"}"
+        }
         state.compatibilityResult?.let { result ->
             lines += "Compatibility demo: ${result.mode} / ${result.action} / ${result.reason}"
         }

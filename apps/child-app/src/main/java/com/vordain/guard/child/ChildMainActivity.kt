@@ -15,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.vordain.guard.core.model.AppTrafficMode
+import com.vordain.guard.core.model.DeviceId
 import com.vordain.guard.data.review.ReviewRequestReason
 import com.vordain.guard.vpn.service.VordainVpnServiceIntents
 import com.vordain.guard.vpn.service.VpnPermissionIntentFactory
@@ -25,6 +26,7 @@ class ChildMainActivity : Activity() {
     private val policyDemo = ChildDebugPolicyDemo()
     private val compatibilityDemo = ChildDebugCompatibilityDemo { System.currentTimeMillis() }
     private val reviewDemo = ChildDebugReviewDemo()
+    private val policyHandoff = ChildDebugPolicyHandoff { System.currentTimeMillis() }
     private val diagnosticsFormatter = ChildDebugDiagnosticsFormatter()
     private lateinit var statusText: TextView
     private lateinit var vpnPermissionText: TextView
@@ -33,6 +35,9 @@ class ChildMainActivity : Activity() {
     private lateinit var setupChecklistText: TextView
     private lateinit var policyDomainInput: EditText
     private lateinit var policyOutputText: TextView
+    private lateinit var policyHandoffTargetInput: EditText
+    private lateinit var policyHandoffPayloadInput: EditText
+    private lateinit var policyHandoffOutputText: TextView
     private lateinit var compatibilityPackageInput: EditText
     private lateinit var compatibilityDomainInput: EditText
     private lateinit var compatibilityOutputText: TextView
@@ -44,6 +49,8 @@ class ChildMainActivity : Activity() {
     private var lastCommand: String = ChildVpnSmokeLabels.COMMAND_NONE
     private var shellStatus: String = ChildVpnSmokeLabels.STATUS_NOT_RUNNING
     private var policyResult: ChildDebugPolicyResult? = null
+    private var policyHandoffResult: ChildDebugPolicyHandoffResult? = null
+    private var currentPolicyVersion: String = "debug-tablet-policy"
     private var compatibilityResult: ChildDebugCompatibilityResult? = null
     private var reviewResult: ChildDebugReviewResult? = null
     private val localDebugEvents = mutableListOf<String>()
@@ -116,6 +123,20 @@ class ChildMainActivity : Activity() {
         })
         policyOutputText = valueLabel("No policy demo result yet", textSize = 14f)
         layout.addView(policyOutputText)
+
+        layout.addView(sectionTitle("Debug policy handoff"))
+        policyHandoffTargetInput = editText("child-debug-device")
+        policyHandoffPayloadInput = multiLineEditText("")
+        layout.addView(labeledField("Target child device id", policyHandoffTargetInput))
+        layout.addView(labeledField("Paste debug policy update payload", policyHandoffPayloadInput))
+        layout.addView(button("Apply debug policy update") {
+            applyDebugPolicyUpdate()
+        })
+        layout.addView(button("Clear policy update result") {
+            clearPolicyHandoffResult()
+        })
+        policyHandoffOutputText = valueLabel(policyDemo.policySummary(currentPolicyVersion), textSize = 14f)
+        layout.addView(policyHandoffOutputText)
 
         layout.addView(sectionTitle("Compatibility Mode tester"))
         compatibilityPackageInput = editText("com.netflix.mediaclient")
@@ -204,6 +225,23 @@ class ChildMainActivity : Activity() {
         }
     }
 
+    private fun multiLineEditText(initialText: String): EditText {
+        return EditText(this).apply {
+            setText(initialText)
+            setSingleLine(false)
+            minLines = 5
+            setPadding(0, 8, 0, 8)
+        }
+    }
+
+    private fun labeledField(label: String, field: EditText): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(valueLabel(label, 14f))
+            addView(field)
+        }
+    }
+
     private fun button(
         text: String,
         onClick: () -> Unit,
@@ -279,6 +317,26 @@ class ChildMainActivity : Activity() {
     private fun evaluatePolicyDomain() {
         policyResult = policyDemo.evaluate(policyDomainInput.text.toString())
         policyOutputText.text = policyResult?.asDisplayText().orEmpty()
+        refreshDiagnosticsViews()
+    }
+
+    private fun applyDebugPolicyUpdate() {
+        val result = policyHandoff.apply(
+            expectedDeviceId = DeviceId(policyHandoffTargetInput.text.toString().trim()),
+            payload = policyHandoffPayloadInput.text.toString(),
+        )
+        policyHandoffResult = result
+        if (result.accepted && result.policy != null && result.policyVersion != null) {
+            policyDemo.replacePolicy(result.policy)
+            currentPolicyVersion = result.policyVersion.value
+        }
+        policyHandoffOutputText.text = result.asDisplayText()
+        refreshDiagnosticsViews()
+    }
+
+    private fun clearPolicyHandoffResult() {
+        policyHandoffResult = null
+        policyHandoffOutputText.text = policyDemo.policySummary(currentPolicyVersion)
         refreshDiagnosticsViews()
     }
 
@@ -379,6 +437,8 @@ class ChildMainActivity : Activity() {
             shellStatus = shellStatus,
             setupChecklist = createSetupChecklist(),
             policyResult = policyResult,
+            policyHandoffResult = policyHandoffResult,
+            currentPolicyVersion = currentPolicyVersion,
             compatibilityResult = compatibilityResult,
             reviewResult = reviewResult,
             localEvents = localDebugEvents.toList(),

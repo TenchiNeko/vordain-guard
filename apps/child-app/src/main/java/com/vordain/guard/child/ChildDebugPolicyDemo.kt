@@ -9,10 +9,27 @@ import com.vordain.guard.core.policy.Policy
 class ChildDebugPolicyDemo(
     private val policyEngine: DefaultPolicyEngine = DefaultPolicyEngine(),
 ) {
+    private var currentPolicy: Policy = defaultPolicy
+
+    fun replacePolicy(policy: Policy) {
+        currentPolicy = policy
+    }
+
+    fun policySummary(policyVersion: String): String {
+        return listOf(
+            "Current debug policy version: $policyVersion",
+            "Allowed domains: ${currentPolicy.allowedDomains.size}",
+            "Blocked domains: ${currentPolicy.blockedDomains.size}",
+            "Mode: ${currentPolicy.mode.name}",
+            "Block unknown domains: ${currentPolicy.blockUnknownDomains}",
+            "Block known proxy domains: ${currentPolicy.blockKnownProxyDomains}",
+        ).joinToString(separator = "\n")
+    }
+
     fun evaluate(rawDomain: String): ChildDebugPolicyResult {
         return runCatching {
             val domainName = DomainName.from(rawDomain)
-            val evaluation = policyEngine.evaluateDomain(domainName, samplePolicy)
+            val evaluation = policyEngine.evaluateDomain(domainName, currentPolicy)
             ChildDebugPolicyResult(
                 normalizedDomain = domainName.value,
                 decision = evaluation.decision.name,
@@ -32,7 +49,7 @@ class ChildDebugPolicyDemo(
     }
 
     private companion object {
-        val samplePolicy = Policy(
+        val defaultPolicy = Policy(
             id = PolicyId("debug-tablet-policy"),
             mode = LockdownMode.STANDARD,
             allowedDomains = setOf(DomainName.from("school.example.edu")),
