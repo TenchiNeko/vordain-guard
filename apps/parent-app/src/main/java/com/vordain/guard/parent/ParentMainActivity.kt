@@ -17,6 +17,19 @@ import com.vordain.guard.core.model.DeviceId
 import com.vordain.guard.core.model.DomainName
 import com.vordain.guard.core.model.LockdownMode
 import com.vordain.guard.core.model.PolicyId
+import com.vordain.guard.core.pairing.DebugPairingAcceptanceCodec
+import com.vordain.guard.core.pairing.DebugPairingAcceptanceCodecResult
+import com.vordain.guard.core.pairing.DebugPairingInviteCodec
+import com.vordain.guard.core.pairing.DebugPairingInviteCodecResult
+import com.vordain.guard.core.pairing.PairingCapability
+import com.vordain.guard.core.pairing.PairingDeviceProfile
+import com.vordain.guard.core.pairing.PairingEvaluator
+import com.vordain.guard.core.pairing.PairingInvite
+import com.vordain.guard.core.pairing.PairingPublicKeyFingerprint
+import com.vordain.guard.core.pairing.PairingRole
+import com.vordain.guard.core.pairing.PairingSessionId
+import com.vordain.guard.core.pairing.PairingStatus
+import com.vordain.guard.core.pairing.PairingVerificationCode
 import com.vordain.guard.core.policy.Policy
 import com.vordain.guard.core.policysync.DebugPolicyUpdateCodec
 import com.vordain.guard.core.policysync.PolicyUpdateSignature
@@ -25,6 +38,9 @@ import com.vordain.guard.core.policysync.SignedPolicyUpdate
 
 class ParentMainActivity : Activity() {
     private val codec = DebugPolicyUpdateCodec()
+    private val inviteCodec = DebugPairingInviteCodec()
+    private val acceptanceCodec = DebugPairingAcceptanceCodec()
+    private val pairingEvaluator = PairingEvaluator()
     private lateinit var stateStore: ParentDebugStateStore
     private lateinit var targetDeviceInput: EditText
     private lateinit var policyVersionInput: EditText
@@ -33,7 +49,17 @@ class ParentMainActivity : Activity() {
     private lateinit var blockKnownProxyInput: CheckBox
     private lateinit var blockUnknownInput: CheckBox
     private lateinit var payloadOutput: TextView
+    private lateinit var pairingSessionInput: EditText
+    private lateinit var parentDeviceInput: EditText
+    private lateinit var parentDisplayNameInput: EditText
+    private lateinit var parentFingerprintInput: EditText
+    private lateinit var verificationCodeInput: EditText
+    private lateinit var childAcceptanceInput: EditText
+    private lateinit var pairingOutput: TextView
     private var lastPayload: String = ""
+    private var lastPairingInvitePayload: String = ""
+    private var lastPairingAcceptancePayload: String = ""
+    private var acceptedChildSummary: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,12 +84,42 @@ class ParentMainActivity : Activity() {
 
         val snapshot = stateStore.load()
         lastPayload = snapshot.latestGeneratedPayload.orEmpty()
+        lastPairingInvitePayload = snapshot.latestPairingInvitePayload.orEmpty()
+        lastPairingAcceptancePayload = snapshot.latestPairingAcceptancePayload.orEmpty()
+        acceptedChildSummary = snapshot.acceptedChildSummary
+        pairingSessionInput = editText(snapshot.pairingSessionId)
+        parentDeviceInput = editText(snapshot.parentDeviceId)
+        parentDisplayNameInput = editText(snapshot.parentDisplayName)
+        parentFingerprintInput = editText(snapshot.parentFingerprint)
+        verificationCodeInput = editText(snapshot.verificationCode)
+        childAcceptanceInput = editText(lastPairingAcceptancePayload)
         targetDeviceInput = editText(snapshot.targetChildDeviceId)
         policyVersionInput = editText(snapshot.policyVersion)
         allowDomainsInput = editText(snapshot.allowDomainsText)
         blockDomainsInput = editText(snapshot.blockDomainsText)
         blockKnownProxyInput = checkBox("Block known proxy domains", checked = snapshot.blockKnownProxyDomains)
         blockUnknownInput = checkBox("Block unknown domains", checked = snapshot.blockUnknownDomains)
+
+        layout.addView(sectionTitle("Debug pairing handoff"))
+        layout.addView(valueLabel("Local debug only - no server transport.", 14f))
+        layout.addView(labeledField("Parent device id", parentDeviceInput))
+        layout.addView(labeledField("Parent display name", parentDisplayNameInput))
+        layout.addView(labeledField("Parent fingerprint", parentFingerprintInput))
+        layout.addView(labeledField("Pairing session id", pairingSessionInput))
+        layout.addView(labeledField("Verification code", verificationCodeInput))
+        layout.addView(button("Build pairing invite") {
+            buildPairingInvite()
+        })
+        layout.addView(button("Copy pairing invite") {
+            copyPairingInvite()
+        })
+        layout.addView(labeledField("Paste child acceptance", childAcceptanceInput))
+        layout.addView(button("Verify child acceptance") {
+            verifyChildAcceptance()
+        })
+        pairingOutput = valueLabel(createPairingOutput(), 14f)
+        layout.addView(pairingOutput)
+        layout.addView(valueLabel("Production pairing will use encrypted delivery and real key verification later.", 14f))
 
         layout.addView(sectionTitle("Debug policy fields"))
         layout.addView(labeledField("Target child device id", targetDeviceInput))
@@ -86,6 +142,79 @@ class ParentMainActivity : Activity() {
         layout.addView(valueLabel("Production policy sync will use signed encrypted delivery later.", 14f))
 
         return ScrollView(this).apply { addView(layout) }
+    }
+
+    private fun buildPairingInvite() {
+        val result = runCatching {
+            val now = System.currentTimeMillis()
+            val invite = PairingInvite(
+                sessionId = PairingSessionId(pairingSessionInput.text.toString().trim()),
+                parentDeviceProfile = PairingDeviceProfile(
+                    deviceId = DeviceId(parentDeviceInput.text.toString().trim()),
+                    role = PairingRole.PARENT,
+                    displayName = parentDisplayNameInput.text.toString().trim(),
+                    publicKeyFingerprint = PairingPublicKeyFingerprint(parentFingerprintInput.text.toString().trim()),
+                    capabilities = defaultPairingCapabilities,
+                ),
+                createdAtMillis = now,
+                expiresAtMillis = now + DEBUG_UPDATE_TTL_MILLIS,
+                verificationCode = PairingVerificationCode(verificationCodeInput.text.toString().trim()),
+            )
+            inviteCodec.encode(invite)
+        }
+
+        lastPairingInvitePayload = result.getOrDefault("")
+        pairingOutput.text = result.getOrElse { throwable ->
+            "Could not build pairing invite: ${throwable.message}"
+        }
+        stateStore.save(createSnapshot())
+    }
+
+    private fun copyPairingInvite() {
+        if (lastPairingInvitePayload.isBlank()) {
+            buildPairingInvite()
+        }
+        if (lastPairingInvitePayload.isBlank()) {
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain debug pairing invite", lastPairingInvitePayload))
+        pairingOutput.text = "$lastPairingInvitePayload\n\nCopied debug pairing invite."
+        stateStore.save(createSnapshot())
+    }
+
+    private fun verifyChildAcceptance() {
+        lastPairingAcceptancePayload = childAcceptanceInput.text.toString()
+        val inviteResult = inviteCodec.decode(lastPairingInvitePayload)
+        val acceptanceResult = acceptanceCodec.decode(lastPairingAcceptancePayload)
+        pairingOutput.text = if (
+            inviteResult is DebugPairingInviteCodecResult.Decoded &&
+            acceptanceResult is DebugPairingAcceptanceCodecResult.Decoded
+        ) {
+            val result = pairingEvaluator.evaluateAcceptance(
+                invite = inviteResult.invite,
+                acceptance = acceptanceResult.acceptance,
+                currentTimeMillis = System.currentTimeMillis(),
+            )
+            val pairedChild = result.pairedChild
+            if (result.status == PairingStatus.PAIRED && pairedChild != null) {
+                acceptedChildSummary = listOf(
+                    "Child: ${pairedChild.deviceId.value}",
+                    "Display name: ${pairedChild.displayName}",
+                    "Fingerprint: ${pairedChild.publicKeyFingerprint.value}",
+                ).joinToString(separator = "\n")
+            }
+            "Pairing result: ${result.status}\nReason: ${result.reason}\n${acceptedChildSummary.orEmpty()}"
+        } else {
+            acceptedChildSummary = null
+            val reason = when {
+                inviteResult !is DebugPairingInviteCodecResult.Decoded -> "Invite was not available or could not be decoded"
+                acceptanceResult is DebugPairingAcceptanceCodecResult.Rejected -> acceptanceResult.reason
+                else -> "Acceptance could not be decoded"
+            }
+            "Pairing result: ${PairingStatus.REJECTED}\nReason: $reason"
+        }
+        stateStore.save(createSnapshot())
     }
 
     private fun buildDebugPolicyUpdate() {
@@ -145,7 +274,23 @@ class ParentMainActivity : Activity() {
             blockKnownProxyDomains = blockKnownProxyInput.isChecked,
             blockUnknownDomains = blockUnknownInput.isChecked,
             latestGeneratedPayload = lastPayload.takeIf(String::isNotBlank),
+            pairingSessionId = pairingSessionInput.text.toString(),
+            parentDeviceId = parentDeviceInput.text.toString(),
+            parentDisplayName = parentDisplayNameInput.text.toString(),
+            parentFingerprint = parentFingerprintInput.text.toString(),
+            verificationCode = verificationCodeInput.text.toString(),
+            latestPairingInvitePayload = lastPairingInvitePayload.takeIf(String::isNotBlank),
+            latestPairingAcceptancePayload = lastPairingAcceptancePayload.takeIf(String::isNotBlank),
+            acceptedChildSummary = acceptedChildSummary,
         )
+    }
+
+    private fun createPairingOutput(): String {
+        return when {
+            acceptedChildSummary != null -> "Paired child summary:\n$acceptedChildSummary"
+            lastPairingInvitePayload.isNotBlank() -> lastPairingInvitePayload
+            else -> "No debug pairing invite built yet"
+        }
     }
 
     private fun String.toDomainSet(): Set<DomainName> {
@@ -217,5 +362,11 @@ class ParentMainActivity : Activity() {
 
     private companion object {
         const val DEBUG_UPDATE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
+        val defaultPairingCapabilities = setOf(
+            PairingCapability.POLICY_UPDATES,
+            PairingCapability.HEARTBEAT_STATUS,
+            PairingCapability.ENCRYPTED_ALERTS,
+            PairingCapability.PARENT_REVIEW,
+        )
     }
 }

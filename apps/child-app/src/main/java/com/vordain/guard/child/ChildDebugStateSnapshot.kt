@@ -2,7 +2,10 @@ package com.vordain.guard.child
 
 data class ChildDebugStateSnapshot(
     val childDeviceId: String = DEFAULT_CHILD_DEVICE_ID,
+    val childDisplayName: String = DEFAULT_CHILD_DISPLAY_NAME,
+    val childFingerprint: String = DEFAULT_CHILD_FINGERPRINT,
     val latestPolicyPayload: String? = null,
+    val latestPolicyAppliedAtMillis: Long = 0L,
     val latestPolicyVersion: String? = null,
     val latestAllowDomainsCsv: String? = null,
     val latestBlockDomainsCsv: String? = null,
@@ -16,8 +19,13 @@ data class ChildDebugStateSnapshot(
     val setupBlockWithoutVpnStatus: String = SetupCheckState.UNKNOWN.name,
     val setupBatteryOptimizationStatus: String = SetupCheckState.UNKNOWN.name,
     val lastDiagnosticsText: String? = null,
+    val latestPairingInvitePayload: String? = null,
+    val latestPairingAcceptancePayload: String? = null,
+    val acceptedParentSummary: String? = null,
 ) {
     companion object {
         const val DEFAULT_CHILD_DEVICE_ID = "child-debug-device"
+        const val DEFAULT_CHILD_DISPLAY_NAME = "Child Debug Tablet"
+        const val DEFAULT_CHILD_FINGERPRINT = "debug-child-fingerprint"
     }
 }

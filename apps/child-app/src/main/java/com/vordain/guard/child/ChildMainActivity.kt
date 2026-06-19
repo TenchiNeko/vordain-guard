@@ -17,8 +17,20 @@ import android.widget.TextView
 import com.vordain.guard.core.model.AppTrafficMode
 import com.vordain.guard.core.model.DeviceId
 import com.vordain.guard.core.model.DomainName
-import com.vordain.guard.core.policysync.DebugPolicyUpdateCodec
-import com.vordain.guard.core.policysync.DebugPolicyUpdateCodecResult
+import com.vordain.guard.core.pairing.DebugPairingAcceptanceCodec
+import com.vordain.guard.core.pairing.DebugPairingInviteCodec
+import com.vordain.guard.core.pairing.DebugPairingInviteCodecResult
+import com.vordain.guard.core.pairing.PairingAcceptance
+import com.vordain.guard.core.pairing.PairingCapability
+import com.vordain.guard.core.pairing.PairingDeviceProfile
+import com.vordain.guard.core.pairing.PairingEvaluator
+import com.vordain.guard.core.pairing.PairingPublicKeyFingerprint
+import com.vordain.guard.core.pairing.PairingRole
+import com.vordain.guard.core.pairing.PairingStatus
+import com.vordain.guard.core.pairing.PairingVerificationCode
+import com.vordain.guard.core.policysync.PersistedSignedPolicySnapshot
+import com.vordain.guard.core.policysync.PolicyVersion
+import com.vordain.guard.core.policysync.SignedPolicySnapshotRestorer
 import com.vordain.guard.data.review.ReviewRequestReason
 import com.vordain.guard.vpn.service.VordainVpnServiceIntents
 import com.vordain.guard.vpn.service.VpnPermissionIntentFactory
@@ -26,7 +38,10 @@ import com.vordain.guard.vpn.service.VpnPrepareResult
 
 class ChildMainActivity : Activity() {
     private val vpnPermissionIntentFactory = VpnPermissionIntentFactory()
-    private val policyCodec = DebugPolicyUpdateCodec()
+    private val policySnapshotRestorer = SignedPolicySnapshotRestorer()
+    private val pairingInviteCodec = DebugPairingInviteCodec()
+    private val pairingAcceptanceCodec = DebugPairingAcceptanceCodec()
+    private val pairingEvaluator = PairingEvaluator()
     private val policyDemo = ChildDebugPolicyDemo()
     private val compatibilityDemo = ChildDebugCompatibilityDemo { System.currentTimeMillis() }
     private val reviewDemo = ChildDebugReviewDemo()
@@ -43,6 +58,10 @@ class ChildMainActivity : Activity() {
     private lateinit var policyHandoffTargetInput: EditText
     private lateinit var policyHandoffPayloadInput: EditText
     private lateinit var policyHandoffOutputText: TextView
+    private lateinit var childDisplayNameInput: EditText
+    private lateinit var childFingerprintInput: EditText
+    private lateinit var pairingInviteInput: EditText
+    private lateinit var pairingOutputText: TextView
     private lateinit var compatibilityPackageInput: EditText
     private lateinit var compatibilityDomainInput: EditText
     private lateinit var compatibilityOutputText: TextView
@@ -55,8 +74,15 @@ class ChildMainActivity : Activity() {
     private var shellStatus: String = ChildVpnSmokeLabels.STATUS_NOT_RUNNING
     private var childDeviceId: String = ChildDebugStateSnapshot.DEFAULT_CHILD_DEVICE_ID
     private var latestPolicyPayload: String? = null
+    private var latestPolicyAppliedAtMillis: Long = 0L
     private var latestAllowDomainsCsv: String? = null
     private var latestBlockDomainsCsv: String? = null
+    private var currentPolicySource: String = "Default sample policy"
+    private var childDisplayName: String = ChildDebugStateSnapshot.DEFAULT_CHILD_DISPLAY_NAME
+    private var childFingerprint: String = ChildDebugStateSnapshot.DEFAULT_CHILD_FINGERPRINT
+    private var latestPairingInvitePayload: String? = null
+    private var latestPairingAcceptancePayload: String? = null
+    private var acceptedParentSummary: String? = null
     private var setupForegroundNotificationStatus: SetupCheckState = SetupCheckState.UNKNOWN
     private var setupAlwaysOnVpnStatus: SetupCheckState = SetupCheckState.UNKNOWN
     private var setupBlockWithoutVpnStatus: SetupCheckState = SetupCheckState.UNKNOWN
@@ -159,6 +185,7 @@ class ChildMainActivity : Activity() {
         })
         policyHandoffOutputText = valueLabel(
             buildString {
+                append("Current debug policy source: $currentPolicySource\n")
                 append(policyDemo.policySummary(currentPolicyVersion))
                 latestAllowDomainsCsv?.let { append("\nLatest allow domains: $it") }
                 latestBlockDomainsCsv?.let { append("\nLatest block domains: $it") }
@@ -166,6 +193,26 @@ class ChildMainActivity : Activity() {
             textSize = 14f,
         )
         layout.addView(policyHandoffOutputText)
+
+        layout.addView(sectionTitle("Debug pairing handoff"))
+        layout.addView(valueLabel("Debug pairing only. No server delivery.", textSize = 14f))
+        childDisplayNameInput = editText(childDisplayName)
+        childFingerprintInput = editText(childFingerprint)
+        pairingInviteInput = multiLineEditText(latestPairingInvitePayload.orEmpty())
+        layout.addView(labeledField("Child display name", childDisplayNameInput))
+        layout.addView(labeledField("Child fingerprint", childFingerprintInput))
+        layout.addView(labeledField("Paste parent pairing invite", pairingInviteInput))
+        layout.addView(button("Accept pairing invite") {
+            acceptPairingInvite()
+        })
+        layout.addView(button("Copy child acceptance") {
+            copyChildAcceptance()
+        })
+        layout.addView(button("Clear pairing result") {
+            clearPairingResult()
+        })
+        pairingOutputText = valueLabel(createPairingOutput(), textSize = 14f)
+        layout.addView(pairingOutputText)
 
         layout.addView(sectionTitle("Compatibility Mode tester"))
         compatibilityPackageInput = editText("com.netflix.mediaclient")
@@ -362,8 +409,10 @@ class ChildMainActivity : Activity() {
             policyDemo.replacePolicy(result.policy)
             currentPolicyVersion = result.policyVersion.value
             latestPolicyPayload = policyHandoffPayloadInput.text.toString()
+            latestPolicyAppliedAtMillis = System.currentTimeMillis()
             latestAllowDomainsCsv = result.policy.allowedDomains.toCsv()
             latestBlockDomainsCsv = result.policy.blockedDomains.toCsv()
+            currentPolicySource = "Verified applied debug policy"
         }
         policyHandoffOutputText.text = result.asDisplayText()
         saveCurrentState()
@@ -374,6 +423,82 @@ class ChildMainActivity : Activity() {
         policyHandoffResult = null
         policyHandoffOutputText.text = policyDemo.policySummary(currentPolicyVersion)
         refreshDiagnosticsViews()
+    }
+
+    private fun acceptPairingInvite() {
+        childDeviceId = policyHandoffTargetInput.text.toString().trim().ifBlank {
+            ChildDebugStateSnapshot.DEFAULT_CHILD_DEVICE_ID
+        }
+        childDisplayName = childDisplayNameInput.text.toString().trim().ifBlank {
+            ChildDebugStateSnapshot.DEFAULT_CHILD_DISPLAY_NAME
+        }
+        childFingerprint = childFingerprintInput.text.toString().trim().ifBlank {
+            ChildDebugStateSnapshot.DEFAULT_CHILD_FINGERPRINT
+        }
+        latestPairingInvitePayload = pairingInviteInput.text.toString()
+
+        val output = when (val inviteResult = pairingInviteCodec.decode(pairingInviteInput.text.toString())) {
+            is DebugPairingInviteCodecResult.Rejected -> {
+                latestPairingAcceptancePayload = null
+                acceptedParentSummary = null
+                "Pairing result: ${PairingStatus.REJECTED}\nReason: ${inviteResult.reason}"
+            }
+            is DebugPairingInviteCodecResult.Decoded -> {
+                val acceptance = PairingAcceptance(
+                    sessionId = inviteResult.invite.sessionId,
+                    childDeviceProfile = PairingDeviceProfile(
+                        deviceId = DeviceId(childDeviceId),
+                        role = PairingRole.CHILD,
+                        displayName = childDisplayName,
+                        publicKeyFingerprint = PairingPublicKeyFingerprint(childFingerprint),
+                        capabilities = defaultPairingCapabilities,
+                    ),
+                    acceptedAtMillis = System.currentTimeMillis(),
+                    verificationCode = inviteResult.invite.verificationCode,
+                )
+                val evaluation = pairingEvaluator.evaluateAcceptance(
+                    invite = inviteResult.invite,
+                    acceptance = acceptance,
+                    currentTimeMillis = System.currentTimeMillis(),
+                )
+                val pairedParent = evaluation.pairedParent
+                if (evaluation.status == PairingStatus.PAIRED && pairedParent != null) {
+                    latestPairingAcceptancePayload = pairingAcceptanceCodec.encode(acceptance)
+                    acceptedParentSummary = listOf(
+                        "Parent: ${pairedParent.deviceId.value}",
+                        "Display name: ${pairedParent.displayName}",
+                        "Fingerprint: ${pairedParent.publicKeyFingerprint.value}",
+                    ).joinToString(separator = "\n")
+                } else {
+                    latestPairingAcceptancePayload = null
+                    acceptedParentSummary = null
+                }
+                "Pairing result: ${evaluation.status}\nReason: ${evaluation.reason}\n${acceptedParentSummary.orEmpty()}"
+            }
+        }
+
+        pairingOutputText.text = output
+        saveCurrentState()
+        refreshDiagnosticsViews()
+    }
+
+    private fun copyChildAcceptance() {
+        val acceptancePayload = latestPairingAcceptancePayload
+        if (acceptancePayload.isNullOrBlank()) {
+            pairingOutputText.text = "No child acceptance payload is available yet"
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain debug pairing acceptance", acceptancePayload))
+        pairingOutputText.text = "$acceptancePayload\n\nCopied child acceptance."
+        saveCurrentState()
+    }
+
+    private fun clearPairingResult() {
+        latestPairingAcceptancePayload = null
+        acceptedParentSummary = null
+        pairingOutputText.text = createPairingOutput()
+        saveCurrentState()
     }
 
     private fun evaluateCompatibility(mode: AppTrafficMode) {
@@ -520,9 +645,12 @@ class ChildMainActivity : Activity() {
     private fun restoreState(snapshot: ChildDebugStateSnapshot) {
         childDeviceId = snapshot.childDeviceId.ifBlank { ChildDebugStateSnapshot.DEFAULT_CHILD_DEVICE_ID }
         latestPolicyPayload = snapshot.latestPolicyPayload
+        latestPolicyAppliedAtMillis = snapshot.latestPolicyAppliedAtMillis
         currentPolicyVersion = snapshot.latestPolicyVersion ?: currentPolicyVersion
         latestAllowDomainsCsv = snapshot.latestAllowDomainsCsv
         latestBlockDomainsCsv = snapshot.latestBlockDomainsCsv
+        childDisplayName = snapshot.childDisplayName
+        childFingerprint = snapshot.childFingerprint
         vpnPermissionStatus = snapshot.vpnPermissionStatusLabel
         lastCommand = snapshot.lastVpnCommandLabel
         shellStatus = snapshot.shellStatusLabel
@@ -531,15 +659,31 @@ class ChildMainActivity : Activity() {
         setupBlockWithoutVpnStatus = snapshot.setupBlockWithoutVpnStatus.toSetupCheckState()
         setupBatteryOptimizationStatus = snapshot.setupBatteryOptimizationStatus.toSetupCheckState()
         lastDiagnosticsText = snapshot.lastDiagnosticsText
+        latestPairingInvitePayload = snapshot.latestPairingInvitePayload
+        latestPairingAcceptancePayload = snapshot.latestPairingAcceptancePayload
+        acceptedParentSummary = snapshot.acceptedParentSummary
 
         val payload = snapshot.latestPolicyPayload
         if (!payload.isNullOrBlank()) {
-            val decoded = policyCodec.decode(payload)
-            if (decoded is DebugPolicyUpdateCodecResult.Decoded) {
-                policyDemo.replacePolicy(decoded.update.policy)
-                currentPolicyVersion = decoded.update.policyVersion.value
-                latestAllowDomainsCsv = decoded.update.policy.allowedDomains.toCsv()
-                latestBlockDomainsCsv = decoded.update.policy.blockedDomains.toCsv()
+            val restored = policySnapshotRestorer.restore(
+                snapshot = PersistedSignedPolicySnapshot(
+                    encodedPayload = payload,
+                    appliedAtMillis = snapshot.latestPolicyAppliedAtMillis,
+                    expectedDeviceId = DeviceId(childDeviceId),
+                    lastKnownPolicyVersion = snapshot.latestPolicyVersion?.let(::PolicyVersion),
+                ),
+                currentTimeMillis = System.currentTimeMillis(),
+            )
+            val restoredPolicy = restored.policy
+            val restoredPolicyVersion = restored.policyVersion
+            if (restored.accepted && restoredPolicy != null && restoredPolicyVersion != null) {
+                policyDemo.replacePolicy(restoredPolicy)
+                currentPolicyVersion = restoredPolicyVersion.value
+                latestAllowDomainsCsv = restoredPolicy.allowedDomains.toCsv()
+                latestBlockDomainsCsv = restoredPolicy.blockedDomains.toCsv()
+                currentPolicySource = "Verified persisted debug policy"
+            } else {
+                currentPolicySource = "Persisted policy rejected: ${restored.reason}"
             }
         }
     }
@@ -556,9 +700,20 @@ class ChildMainActivity : Activity() {
                     childDeviceId
                 },
                 latestPolicyPayload = latestPolicyPayload,
+                latestPolicyAppliedAtMillis = latestPolicyAppliedAtMillis,
                 latestPolicyVersion = currentPolicyVersion,
                 latestAllowDomainsCsv = latestAllowDomainsCsv,
                 latestBlockDomainsCsv = latestBlockDomainsCsv,
+                childDisplayName = if (::childDisplayNameInput.isInitialized) {
+                    childDisplayNameInput.text.toString().ifBlank { childDisplayName }
+                } else {
+                    childDisplayName
+                },
+                childFingerprint = if (::childFingerprintInput.isInitialized) {
+                    childFingerprintInput.text.toString().ifBlank { childFingerprint }
+                } else {
+                    childFingerprint
+                },
                 vpnPermissionStatusLabel = vpnPermissionStatus,
                 lastVpnCommandLabel = lastCommand,
                 shellStatusLabel = shellStatus,
@@ -573,6 +728,13 @@ class ChildMainActivity : Activity() {
                 setupBlockWithoutVpnStatus = setupBlockWithoutVpnStatus.name,
                 setupBatteryOptimizationStatus = setupBatteryOptimizationStatus.name,
                 lastDiagnosticsText = lastDiagnosticsText,
+                latestPairingInvitePayload = if (::pairingInviteInput.isInitialized) {
+                    pairingInviteInput.text.toString().takeIf(String::isNotBlank) ?: latestPairingInvitePayload
+                } else {
+                    latestPairingInvitePayload
+                },
+                latestPairingAcceptancePayload = latestPairingAcceptancePayload,
+                acceptedParentSummary = acceptedParentSummary,
             ),
         )
     }
@@ -585,7 +747,21 @@ class ChildMainActivity : Activity() {
         return map(DomainName::value).sorted().joinToString(separator = ",")
     }
 
+    private fun createPairingOutput(): String {
+        return when {
+            acceptedParentSummary != null -> "Paired parent summary:\n$acceptedParentSummary"
+            !latestPairingAcceptancePayload.isNullOrBlank() -> latestPairingAcceptancePayload.orEmpty()
+            else -> "No debug pairing accepted yet"
+        }
+    }
+
     private companion object {
         const val REQUEST_VPN_PERMISSION = 1001
+        val defaultPairingCapabilities = setOf(
+            PairingCapability.POLICY_UPDATES,
+            PairingCapability.HEARTBEAT_STATUS,
+            PairingCapability.ENCRYPTED_ALERTS,
+            PairingCapability.PARENT_REVIEW,
+        )
     }
 }

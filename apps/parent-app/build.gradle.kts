@@ -27,6 +27,7 @@ kotlin {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:pairing"))
     implementation(project(":core:policy"))
     implementation(project(":core:policy-sync"))
     implementation(project(":features:pairing"))
