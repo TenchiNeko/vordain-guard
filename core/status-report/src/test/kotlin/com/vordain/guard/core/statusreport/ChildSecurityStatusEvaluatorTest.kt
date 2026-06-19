@@ -127,6 +127,80 @@ class ChildSecurityStatusEvaluatorTest {
     }
 
     @Test
+    fun statusReportCanEncodeDecodeBasicDnsGuardMode() {
+        val report = evaluator.evaluate(
+            baseInput(
+                activeMode = ChildSecurityActiveMode.BASIC_DNS_GUARD,
+                dnsBlockedResponseCount = 7,
+                dnsAllowedForwardedCount = 8,
+                dnsAllowedForwardFailureCount = 9,
+            ),
+        )
+
+        val decoded = codec.decode(codec.encode(report))
+
+        assertIs<DebugChildSecurityReportCodecResult.Decoded>(decoded)
+        assertEquals(ChildSecurityActiveMode.BASIC_DNS_GUARD, decoded.report.activeMode)
+        assertEquals(7, decoded.report.dnsBlockedResponseCount)
+        assertEquals(8, decoded.report.dnsAllowedForwardedCount)
+        assertEquals(9, decoded.report.dnsAllowedForwardFailureCount)
+    }
+
+    @Test
+    fun basicDnsGuardDiagnosticsRoundTrips() {
+        val diagnosticsCodec = DebugBasicDnsGuardDiagnosticsCodec()
+        val report = BasicDnsGuardDiagnosticsReport(
+            childDeviceId = DeviceId("child-debug-device"),
+            generatedAtMillis = 123L,
+            mode = ChildSecurityActiveMode.BASIC_DNS_GUARD,
+            activePolicySource = "Verified debug policy",
+            activePolicyVersion = "debug-7",
+            activePreset = "Basic DNS Guard",
+            readinessStatus = "Ready for DNS Guard",
+            hardeningSummary = "Setup confirmed",
+            bypassRiskSummary = "Needs attention",
+            dnsBlockedCount = 2,
+            dnsAllowedForwardedCount = 3,
+            encryptedDnsBlockedCount = 4,
+            dnsFailureCount = 5,
+        )
+
+        val decoded = diagnosticsCodec.decode(diagnosticsCodec.encode(report))
+
+        assertIs<DebugBasicDnsGuardDiagnosticsCodecResult.Decoded>(decoded)
+        assertEquals(report, decoded.report)
+    }
+
+    @Test
+    fun basicDnsGuardDiagnosticsRejectsWrongHeader() {
+        val decoded = DebugBasicDnsGuardDiagnosticsCodec().decode("NOPE\nchildDeviceId=child-debug-device")
+
+        assertIs<DebugBasicDnsGuardDiagnosticsCodecResult.Rejected>(decoded)
+    }
+
+    @Test
+    fun basicDnsGuardDiagnosticsRejectsUnknownMode() {
+        val decoded = DebugBasicDnsGuardDiagnosticsCodec().decode(
+            """
+            VORDAIN_DEBUG_BASIC_DNS_GUARD_DIAGNOSTICS_V1
+            childDeviceId=child-debug-device
+            generatedAtMillis=123
+            mode=READY
+            """.trimIndent(),
+        )
+
+        assertIs<DebugBasicDnsGuardDiagnosticsCodecResult.Rejected>(decoded)
+    }
+
+    @Test
+    fun basicDnsGuardDiagnosticsWarningIsConservative() {
+        val warning = BasicDnsGuardDiagnosticsReport.WARNING_TEXT
+
+        assertTrue(warning.contains("Not full protection"))
+        assertFalse(warning.contains("Protected"))
+    }
+
+    @Test
     fun codecRejectsWrongHeader() {
         val decoded = codec.decode("NOPE\nchildDeviceId=child-debug-device")
 

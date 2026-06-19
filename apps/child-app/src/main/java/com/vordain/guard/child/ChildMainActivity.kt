@@ -48,6 +48,8 @@ import com.vordain.guard.core.statusreport.ChildSecuritySignal
 import com.vordain.guard.core.statusreport.ChildSecurityStatusEvaluator
 import com.vordain.guard.core.statusreport.ChildSecurityStatusInput
 import com.vordain.guard.core.statusreport.ChildSecurityStatusReport
+import com.vordain.guard.core.statusreport.BasicDnsGuardDiagnosticsReport
+import com.vordain.guard.core.statusreport.DebugBasicDnsGuardDiagnosticsCodec
 import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodec
 import com.vordain.guard.data.review.ReviewRequestReason
 import com.vordain.guard.features.bypassrisk.BypassRiskCategory
@@ -95,6 +97,7 @@ class ChildMainActivity : Activity() {
     private val hardeningSetupReportCodec = DebugHardeningSetupReportCodec()
     private val childSecurityStatusEvaluator = ChildSecurityStatusEvaluator()
     private val childSecurityReportCodec = DebugChildSecurityReportCodec()
+    private val basicDnsGuardDiagnosticsCodec = DebugBasicDnsGuardDiagnosticsCodec()
     private val bypassRiskEvaluator = BypassRiskEvaluator()
     private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
     private val dnsOnlyReadinessEvaluator = DnsOnlyReadinessEvaluator()
@@ -107,6 +110,7 @@ class ChildMainActivity : Activity() {
     private lateinit var setupChecklistText: TextView
     private lateinit var hardeningSetupText: TextView
     private lateinit var childSecurityStatusText: TextView
+    private lateinit var basicDnsGuardText: TextView
     private lateinit var bypassRiskText: TextView
     private lateinit var labCaptureText: TextView
     private lateinit var policyDomainInput: EditText
@@ -223,6 +227,30 @@ class ChildMainActivity : Activity() {
         layout.addView(centerLabel(ChildVpnSmokeLabels.TITLE, textSize = 28f))
         layout.addView(centerLabel("Debug tablet build", textSize = 16f))
         layout.addView(centerLabel(ChildVpnSmokeLabels.WARNING, textSize = 18f))
+
+        layout.addView(sectionTitle(ChildVpnSmokeLabels.BASIC_DNS_TITLE))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.BASIC_DNS_NOT_FULL, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.BASIC_DNS_NON_DNS, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.BASIC_DNS_PRODUCTION, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.DNS_ONLY_HARDENING, textSize = 14f))
+        layout.addView(button("Start Basic DNS Guard") {
+            startBasicDnsGuardWhenAllowed()
+        })
+        layout.addView(button("Stop Basic DNS Guard") {
+            stopBasicDnsGuard()
+        })
+        layout.addView(button("Refresh Basic DNS status") {
+            refreshDiagnosticsViews()
+        })
+        layout.addView(button("Copy Basic DNS diagnostics") {
+            copyBasicDnsGuardDiagnostics()
+        })
+        layout.addView(button("Continue setup / review hardening") {
+            hardeningSetupText.text = createHardeningSetupDisplay(currentHardeningSetupSnapshot())
+            bypassRiskText.text = createBypassRiskDisplay()
+        })
+        basicDnsGuardText = valueLabel(createBasicDnsGuardDisplay(), textSize = 14f)
+        layout.addView(basicDnsGuardText)
 
         layout.addView(sectionTitle("VPN shell controls"))
         statusText = valueLabel(ChildVpnSmokeLabels.STATUS_NOT_RUNNING, textSize = 18f)
@@ -934,6 +962,55 @@ class ChildMainActivity : Activity() {
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
     }
 
+    private fun startBasicDnsGuardWhenAllowed() {
+        when (val result = vpnPermissionIntentFactory.createPrepareResult(this)) {
+            VpnPrepareResult.AlreadyGranted -> {
+                setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_GRANTED)
+                setLastCommand(ChildVpnSmokeLabels.COMMAND_BASIC_DNS_START_SENT)
+                setShellStatus(ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING)
+                val intent = VordainVpnServiceIntents.startBasicDnsGuard(this)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+                recordAudit(
+                    type = AuditEntryType.BASIC_DNS_GUARD_STARTED,
+                    severity = AuditSeverity.INFO,
+                    title = "Basic DNS Guard started",
+                    detail = "Basic DNS Guard start command was sent.",
+                )
+                setStatus(ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE)
+            }
+            is VpnPrepareResult.ConsentRequired -> {
+                setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_REQUIRED)
+                setLastCommand(ChildVpnSmokeLabels.COMMAND_PERMISSION_REQUESTED)
+                recordAudit(
+                    type = AuditEntryType.BASIC_DNS_GUARD_START_NEEDS_ATTENTION,
+                    severity = AuditSeverity.WARNING,
+                    title = "Basic DNS Guard needs attention",
+                    detail = "VPN permission is required before Basic DNS Guard can start.",
+                )
+                setStatus(ChildVpnSmokeLabels.STATUS_PERMISSION_REQUIRED)
+                startActivityForResult(result.intent, REQUEST_VPN_PERMISSION)
+            }
+        }
+    }
+
+    private fun stopBasicDnsGuard() {
+        setLastCommand(ChildVpnSmokeLabels.COMMAND_BASIC_DNS_STOP_SENT)
+        setShellStatus(ChildVpnSmokeLabels.STATUS_STOP_COMMAND_SENT)
+        startService(VordainVpnServiceIntents.stopBasicDnsGuard(this))
+        recordAudit(
+            type = AuditEntryType.BASIC_DNS_GUARD_STOPPED,
+            severity = AuditSeverity.INFO,
+            title = "Basic DNS Guard stopped",
+            detail = "Basic DNS Guard stop command was sent.",
+        )
+        setStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
+        setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
+    }
+
     private fun openSettings(action: String) {
         val intent = Intent(action)
         runCatching {
@@ -1548,9 +1625,85 @@ class ChildMainActivity : Activity() {
         if (::labCaptureText.isInitialized) {
             labCaptureText.text = createLabCaptureDisplay(LabCaptureDebugStatus.snapshot())
         }
+        if (::basicDnsGuardText.isInitialized) {
+            basicDnsGuardText.text = createBasicDnsGuardDisplay()
+        }
         if (::auditTimelineText.isInitialized) {
             auditTimelineText.text = createAuditTimelineDisplay()
         }
+    }
+
+    private fun createBasicDnsGuardDisplay(): String {
+        val report = currentChildSecurityStatusReport()
+        val stats = LabCaptureDebugStatus.snapshot()
+        val readiness = currentDnsOnlyReadinessResult()
+        val hardening = currentHardeningSetupSnapshot()
+        val bypassSummary = currentBypassRiskSummary()
+        return listOf(
+            "Overall local MVP status: ${report.overallStatus.toDisplayLabel()}",
+            "Basic DNS Guard mode: ${basicDnsGuardModeLabel()}",
+            "Readiness: ${readiness.status.toBasicDnsDisplayLabel()} - ${readiness.reason}",
+            "Active policy source: $currentPolicySource",
+            "Active policy version: $currentPolicyVersion",
+            "Active policy preset: ${currentPolicyDisplayLabel ?: currentPolicyPresetName ?: "unspecified"}",
+            "Always-on VPN: ${hardening.itemFor(HardeningSetupStep.VPN_ALWAYS_ON).status.toDisplayLabel()}",
+            "Block without VPN: ${hardening.itemFor(HardeningSetupStep.BLOCK_WITHOUT_VPN).status.toDisplayLabel()}",
+            "Settings/App Lock: ${hardening.itemFor(HardeningSetupStep.SETTINGS_APP_LOCK).status.toDisplayLabel()}",
+            "Private DNS reviewed: ${currentBypassRiskItems().firstOrNull { it.category == BypassRiskCategory.PRIVATE_DNS }?.status?.toDisplayLabel() ?: "Unknown"}",
+            "Alternate VPN/proxy reviewed: ${currentBypassRiskItems().firstOrNull { it.category == BypassRiskCategory.ALTERNATE_VPN_APP }?.status?.toDisplayLabel() ?: "Unknown"} / ${currentBypassRiskItems().firstOrNull { it.category == BypassRiskCategory.PROXY_APP }?.status?.toDisplayLabel() ?: "Unknown"}",
+            "Bypass risk: ${bypassSummary.overallStatus.toDisplayLabel()}",
+            "Blocked DNS: ${stats.dnsBlockedResponseCount}",
+            "Allowed DNS forwarded: ${stats.dnsAllowedForwardedCount}",
+            "Encrypted DNS blocked: ${stats.encryptedDnsBlockedCount}",
+            "DNS failures: ${stats.dnsAllowedForwardFailureCount + stats.dnsResponseWriteFailureCount}",
+            ChildVpnSmokeLabels.BASIC_DNS_NON_DNS,
+            ChildVpnSmokeLabels.BASIC_DNS_NOT_FULL,
+            ChildVpnSmokeLabels.DNS_ONLY_HARDENING,
+        ).joinToString(separator = "\n")
+    }
+
+    private fun basicDnsGuardModeLabel(): String {
+        return when (shellStatus) {
+            ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE -> "Running"
+            ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING -> "Starting"
+            ChildVpnSmokeLabels.STATUS_STOPPED -> "Stopped"
+            ChildVpnSmokeLabels.STATUS_PERMISSION_REQUIRED -> "Needs attention"
+            else -> "Idle"
+        }
+    }
+
+    private fun copyBasicDnsGuardDiagnostics() {
+        val payload = basicDnsGuardDiagnosticsCodec.encode(currentBasicDnsGuardDiagnosticsReport())
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain Basic DNS Guard diagnostics", payload))
+        recordAudit(
+            type = AuditEntryType.BASIC_DNS_DIAGNOSTICS_COPIED,
+            severity = AuditSeverity.INFO,
+            title = "Basic DNS diagnostics copied",
+            detail = "Local Basic DNS Guard diagnostics were copied by user action.",
+        )
+        basicDnsGuardText.text = "${createBasicDnsGuardDisplay()}\n\nCopied Basic DNS diagnostics."
+        saveCurrentState()
+    }
+
+    private fun currentBasicDnsGuardDiagnosticsReport(): BasicDnsGuardDiagnosticsReport {
+        val stats = LabCaptureDebugStatus.snapshot()
+        val readiness = currentDnsOnlyReadinessResult()
+        return BasicDnsGuardDiagnosticsReport(
+            childDeviceId = DeviceId(childDeviceId),
+            generatedAtMillis = System.currentTimeMillis(),
+            mode = ChildSecurityActiveMode.BASIC_DNS_GUARD,
+            activePolicySource = currentPolicySource,
+            activePolicyVersion = currentPolicyVersion.takeIf { currentPolicySource.startsWith("Verified") },
+            activePreset = currentPolicyDisplayLabel ?: currentPolicyPresetName,
+            readinessStatus = readiness.status.toBasicDnsDisplayLabel(),
+            hardeningSummary = currentHardeningSetupSnapshot().summaryStatus.toDisplayLabel(),
+            bypassRiskSummary = currentBypassRiskSummary().overallStatus.toDisplayLabel(),
+            dnsBlockedCount = stats.dnsBlockedResponseCount,
+            dnsAllowedForwardedCount = stats.dnsAllowedForwardedCount,
+            encryptedDnsBlockedCount = stats.encryptedDnsBlockedCount,
+            dnsFailureCount = stats.dnsAllowedForwardFailureCount + stats.dnsResponseWriteFailureCount,
+        )
     }
 
     private fun createDiagnostics(): ChildVpnSmokeDiagnostics {
@@ -1734,9 +1887,16 @@ class ChildMainActivity : Activity() {
         val labCaptureActive = shellStatus == ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_ACTIVE ||
             shellStatus == ChildVpnSmokeLabels.STATUS_LAB_CAPTURE_STARTING ||
             shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_ACTIVE ||
-            shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_STARTING
+            shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_STARTING ||
+            shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE ||
+            shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING
         val labStats = LabCaptureDebugStatus.snapshot()
         val activeMode = if (
+            shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE ||
+            shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING
+        ) {
+            ChildSecurityActiveMode.BASIC_DNS_GUARD
+        } else if (
             shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_ACTIVE ||
             shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_STARTING ||
             labStats.activeModeLabel == "DNS-only lab"
@@ -1804,7 +1964,9 @@ class ChildMainActivity : Activity() {
             append("DNS blocked responses: ${report.dnsBlockedResponseCount}\n")
             append("DNS allowed forwarded: ${report.dnsAllowedForwardedCount}\n")
             append("DNS allowed forward failures: ${report.dnsAllowedForwardFailureCount}\n")
-            if (report.activeMode == ChildSecurityActiveMode.DNS_ONLY_LAB) {
+            if (report.activeMode == ChildSecurityActiveMode.BASIC_DNS_GUARD ||
+                report.activeMode == ChildSecurityActiveMode.DNS_ONLY_LAB
+            ) {
                 append("Non-DNS traffic is not inspected in DNS-only mode.\n")
             }
             append("Signals: ${report.signals.toDisplayLabels()}\n")
@@ -2269,8 +2431,19 @@ class ChildMainActivity : Activity() {
     private fun ChildSecurityActiveMode.toDisplayLabel(): String {
         return when (this) {
             ChildSecurityActiveMode.NONE -> "None"
+            ChildSecurityActiveMode.BASIC_DNS_GUARD -> "Basic DNS Guard active"
             ChildSecurityActiveMode.DNS_ONLY_LAB -> "DNS-only lab active"
             ChildSecurityActiveMode.FULL_TUNNEL_LAB -> "Full-tunnel lab active"
+        }
+    }
+
+    private fun com.vordain.guard.features.bypassrisk.DnsOnlyReadinessStatus.toBasicDnsDisplayLabel(): String {
+        return when (this) {
+            com.vordain.guard.features.bypassrisk.DnsOnlyReadinessStatus.NOT_READY -> "Needs attention"
+            com.vordain.guard.features.bypassrisk.DnsOnlyReadinessStatus.READY_FOR_DNS_LAB -> "Ready for DNS Guard"
+            com.vordain.guard.features.bypassrisk.DnsOnlyReadinessStatus.NEEDS_REVIEW -> "Needs attention"
+            com.vordain.guard.features.bypassrisk.DnsOnlyReadinessStatus.HIGH_RISK -> "High risk"
+            com.vordain.guard.features.bypassrisk.DnsOnlyReadinessStatus.UNKNOWN -> "Unknown"
         }
     }
 

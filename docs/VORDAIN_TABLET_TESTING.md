@@ -29,7 +29,33 @@ tools/export_debug_apks.sh --skip-build
 3. Download `vordain-guard-child-debug.apk`.
 4. Install the APK after confirming the Android install prompt.
 
+## Basic DNS Guard Local MVP Test
+
+1. Open the child app.
+2. Request VPN permission.
+3. Apply a debug policy from the parent app, or use the default sample policy.
+4. Review the hardening and bypass-risk checklist.
+5. Start Basic DNS Guard.
+6. Open a browser.
+7. Test an allowed site.
+8. Test a blocked domain from the sample or debug policy.
+9. Return to the child app and review Basic DNS Guard counters, readiness, active policy, and audit timeline.
+10. Stop Basic DNS Guard.
+
+Expected behavior:
+
+* Basic DNS Guard uses DNS-only enforcement and does not install default routes.
+* Allowed DNS can be forwarded to the lab upstream DNS server.
+* Blocked DNS receives a local synthetic block response.
+* Encrypted-DNS resolver seed domains, such as `dns.google`, are blocked through DNS handling.
+* Non-DNS traffic is not inspected or forwarded by Basic DNS Guard.
+* This does not block every DoH, direct-IP, cached DNS, or app-level encrypted DNS path without additional hardening.
+* Filtering is not production-enabled yet.
+* This is not full protection.
+
 ## DNS-Only Lab Test
+
+DNS-only lab remains available as a developer tool below Basic DNS Guard.
 
 1. Open the child app.
 2. Request VPN permission.
@@ -66,7 +92,7 @@ Recommended child app order:
 2. Request VPN permission.
 3. Complete hardening setup.
 4. Apply parent DNS policy.
-5. Run DNS-only lab test.
+5. Start Basic DNS Guard.
 6. Generate child status report.
 7. Parent reviews report.
 
@@ -103,7 +129,7 @@ Apply and verify the parent-built policy in the child app:
 5. Check the active policy version, preset, allow/block counts, proxy setting, encrypted-DNS resolver setting, and unknown-domain behavior.
 6. Use Re-verify stored policy after app restart to confirm the signed debug payload still verifies.
 7. Use the domain tester to evaluate user-entered domains against the active policy.
-8. Start DNS-only lab; DNS decisions use the verified active policy when available.
+8. Start Basic DNS Guard; DNS decisions use the verified active policy when available.
 
 If the stored policy payload fails verification, the child app falls back to the default sample policy and reports the rejection reason. Summary fields are display-only; the signed debug payload remains the authority.
 
@@ -117,11 +143,11 @@ QR-ready text envelopes are included around share payloads so they can later be 
 
 ## Policy Test Cases
 
-With DNS-only lab running:
+With Basic DNS Guard running:
 
 * Test an allowed domain from the active policy and confirm DNS forwarding counters move.
 * Test a blocked sample domain, such as `blocked.example`, and confirm blocked response counters move.
-* Test an encrypted-DNS resolver domain, such as `dns.google`, and confirm it is blocked through DNS-only lab handling.
+* Test an encrypted-DNS resolver domain, such as `dns.google`, and confirm it is blocked through DNS handling.
 * Test a non-DNS/direct-IP path only as a known limitation. DNS-only mode does not inspect non-DNS traffic.
 
 ## DNS Bypass Hardening Review
@@ -157,7 +183,7 @@ For stronger device hardening during tests, use Always-on VPN, Block without VPN
 
 Full-tunnel lab remains a separate explicit mode. It may interrupt normal internet access because packets are routed into Vordain lab handling. Use it only for device smoke testing, then stop it from the child app.
 
-DNS-only lab is the practical local MVP path for tablet testing because non-DNS traffic is not routed through Vordain in that mode.
+Basic DNS Guard is the primary local MVP path for tablet testing because non-DNS traffic is not routed through Vordain in that mode.
 
 ## Local MVP Limitations
 

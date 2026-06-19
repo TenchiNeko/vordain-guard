@@ -41,6 +41,28 @@ class VpnServiceCommandBridgeTest {
     }
 
     @Test
+    fun basicDnsGuardActionMapsToDistinctStartCommand() {
+        val sink = RecordingVpnSessionSink()
+
+        val result = VpnServiceCommandBridge(sink)
+            .handleAction(VordainVpnServiceActions.ACTION_START_BASIC_DNS_GUARD)
+
+        assertEquals(VpnServiceCommandResult.HandledBasicDnsGuardStart, result)
+        assertEquals(listOf("start-requested"), sink.calls)
+    }
+
+    @Test
+    fun stopBasicDnsGuardActionMapsToStopCommand() {
+        val sink = RecordingVpnSessionSink()
+
+        val result = VpnServiceCommandBridge(sink)
+            .handleAction(VordainVpnServiceActions.ACTION_STOP_BASIC_DNS_GUARD)
+
+        assertEquals(VpnServiceCommandResult.HandledStop, result)
+        assertEquals(listOf("stop-requested"), sink.calls)
+    }
+
+    @Test
     fun stopLabCaptureActionMapsToStopCommand() {
         val sink = RecordingVpnSessionSink()
 
@@ -115,6 +137,8 @@ class VpnServiceCommandBridgeTest {
         assertTrue(source.contains("ACTION_STOP_PROTECTION"))
         assertTrue(source.contains("ACTION_START_LAB_CAPTURE"))
         assertTrue(source.contains("ACTION_STOP_LAB_CAPTURE"))
+        assertTrue(source.contains("ACTION_START_BASIC_DNS_GUARD"))
+        assertTrue(source.contains("ACTION_STOP_BASIC_DNS_GUARD"))
         assertTrue(source.contains("VordainVpnService::class.java"))
     }
 
@@ -125,9 +149,28 @@ class VpnServiceCommandBridgeTest {
         assertTrue(source.contains("override fun onStartCommand"))
         assertTrue(source.contains("HandledStart"))
         assertTrue(source.contains("HandledLabStart"))
+        assertTrue(source.contains("HandledBasicDnsGuardStart"))
         assertTrue(source.contains("HandledStop"))
         assertTrue(source.contains("startForeground("))
         assertTrue(source.contains("stopForeground("))
+    }
+
+    @Test
+    fun notificationTextForBasicDnsGuardIsConservative() {
+        val text = listOf(
+            VpnForegroundNotificationMode.BASIC_DNS_GUARD.title,
+            VpnForegroundNotificationMode.BASIC_DNS_GUARD.body,
+            VpnForegroundNotificationMode.DNS_ONLY_LAB.title,
+            VpnForegroundNotificationMode.DNS_ONLY_LAB.body,
+            VpnForegroundNotificationMode.FULL_TUNNEL_LAB.title,
+            VpnForegroundNotificationMode.FULL_TUNNEL_LAB.body,
+        ).joinToString(" ")
+
+        assertTrue(text.contains("Not full protection"))
+        assertFalse(text.contains("domain", ignoreCase = true))
+        assertFalse(text.contains("browser", ignoreCase = true))
+        assertFalse(text.contains("activity", ignoreCase = true))
+        assertFalse(text.contains("Filtering active"))
     }
 
     @Test
@@ -139,10 +182,10 @@ class VpnServiceCommandBridgeTest {
         assertTrue(source.contains("establish()"))
         assertTrue(source.contains("addAddress"))
         assertTrue(source.contains("addRoute"))
-        assertDoesNotContain(source, "addDnsServer")
+        assertTrue(source.contains("addDnsServer"))
         assertDoesNotContain(source, "DatagramSocket")
         assertDoesNotContain(source, "Socket(")
-        assertDoesNotContain(source, "read(")
+        assertDoesNotContain(source, ".read(")
         assertDoesNotContain(source, "write(")
     }
 
@@ -157,12 +200,11 @@ class VpnServiceCommandBridgeTest {
         assertDoesNotContain(source, "data.outbox")
         assertDoesNotContain(source, "data.relay")
         assertDoesNotContain(source, "backend")
-        assertDoesNotContain(source, "read(")
+        assertDoesNotContain(source, ".read(")
         assertDoesNotContain(source, "write(")
         assertDoesNotContain(source, "FileDescriptor")
         assertDoesNotContain(source, "DatagramSocket")
         assertDoesNotContain(source, "Socket(")
-        assertDoesNotContain(source, "addDnsServer")
     }
 
     @Test

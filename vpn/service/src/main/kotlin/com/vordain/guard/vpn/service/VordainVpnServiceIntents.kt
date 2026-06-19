@@ -33,4 +33,14 @@ object VordainVpnServiceIntents {
         return Intent(context, VordainVpnService::class.java)
             .setAction(VordainVpnServiceActions.ACTION_STOP_DNS_ONLY_LAB)
     }
+
+    fun startBasicDnsGuard(context: Context): Intent {
+        return Intent(context, VordainVpnService::class.java)
+            .setAction(VordainVpnServiceActions.ACTION_START_BASIC_DNS_GUARD)
+    }
+
+    fun stopBasicDnsGuard(context: Context): Intent {
+        return Intent(context, VordainVpnService::class.java)
+            .setAction(VordainVpnServiceActions.ACTION_STOP_BASIC_DNS_GUARD)
+    }
 }

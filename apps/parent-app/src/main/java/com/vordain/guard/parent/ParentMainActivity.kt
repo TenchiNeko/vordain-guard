@@ -100,6 +100,7 @@ class ParentMainActivity : Activity() {
     private lateinit var setupReportOutput: TextView
     private lateinit var childSecurityReportInput: EditText
     private lateinit var childSecurityReportOutput: TextView
+    private lateinit var childDnsGuardStatusOutput: TextView
     private lateinit var bypassRiskReportInput: EditText
     private lateinit var bypassRiskReportOutput: TextView
     private lateinit var reportHistoryOutput: TextView
@@ -175,6 +176,30 @@ class ParentMainActivity : Activity() {
         blockKnownProxyInput = checkBox("Block known proxy domains", checked = snapshot.blockKnownProxyDomains)
         blockEncryptedDnsInput = checkBox("Block encrypted DNS resolver domains", checked = snapshot.blockEncryptedDnsResolvers)
         blockUnknownInput = checkBox("Block unknown domains", checked = snapshot.blockUnknownDomains)
+
+        layout.addView(sectionTitle("Child DNS Guard status"))
+        layout.addView(valueLabel("DNS-only mode is not full protection.", 14f))
+        layout.addView(valueLabel("Production sync will use encrypted relay later.", 14f))
+        layout.addView(button("Build/edit DNS policy") {
+            buildDebugPolicyUpdate()
+            childDnsGuardStatusOutput.text = createChildDnsGuardStatusOutput()
+        })
+        layout.addView(button("Import child status report") {
+            decodeChildSecurityStatusReport()
+            childDnsGuardStatusOutput.text = createChildDnsGuardStatusOutput()
+        })
+        layout.addView(button("Import bypass report") {
+            decodeBypassRiskReport()
+            childDnsGuardStatusOutput.text = createChildDnsGuardStatusOutput()
+        })
+        layout.addView(button("View report history") {
+            reportHistoryOutput.text = createReportHistoryDisplay()
+        })
+        layout.addView(button("Share latest policy payload") {
+            sharePolicyPayload()
+        })
+        childDnsGuardStatusOutput = valueLabel(createChildDnsGuardStatusOutput(), 14f)
+        layout.addView(childDnsGuardStatusOutput)
 
         layout.addView(sectionTitle("Debug pairing handoff"))
         layout.addView(valueLabel("Local debug only - no server transport.", 14f))
@@ -443,8 +468,8 @@ class ParentMainActivity : Activity() {
         if (result.isSuccess) {
             payloadOutput.text = "${result.getOrDefault("")}\n\n${createPolicySummary()}"
             appendReportHistory(
-                type = "POLICY_UPDATE",
-                title = "Debug DNS policy update",
+                type = "PARENT_POLICY_EDITED",
+                title = "Parent DNS policy edited",
                 payload = lastPayload,
             )
         }
@@ -471,6 +496,11 @@ class ParentMainActivity : Activity() {
         shareEnvelope(
             kind = VordainDebugPayloadKind.POLICY_UPDATE,
             title = "Share Vordain DNS policy update",
+            payload = lastPayload,
+        )
+        appendReportHistory(
+            type = "PARENT_POLICY_SHARED",
+            title = "Parent DNS policy shared",
             payload = lastPayload,
         )
     }
@@ -571,10 +601,13 @@ class ParentMainActivity : Activity() {
             is DebugChildSecurityReportCodecResult.Decoded -> {
                 decodedChildSecurityStatusReport = result.report
                 appendReportHistory(
-                    type = "CHILD_STATUS_REPORT",
-                    title = "Child security status report",
+                    type = "CHILD_DNS_GUARD_STATUS_IMPORTED",
+                    title = "Child DNS Guard status imported",
                     payload = lastChildSecurityStatusReportPayload,
                 )
+                if (::childDnsGuardStatusOutput.isInitialized) {
+                    childDnsGuardStatusOutput.text = createChildDnsGuardStatusOutput()
+                }
                 createChildSecurityStatusOutput()
             }
             is DebugChildSecurityReportCodecResult.Rejected -> {
@@ -598,7 +631,58 @@ class ParentMainActivity : Activity() {
         decodedChildSecurityStatusReport = null
         childSecurityReportInput.setText("")
         childSecurityReportOutput.text = createChildSecurityStatusOutput()
+        if (::childDnsGuardStatusOutput.isInitialized) {
+            childDnsGuardStatusOutput.text = createChildDnsGuardStatusOutput()
+        }
         stateStore.save(createSnapshot())
+    }
+
+    private fun createChildDnsGuardStatusOutput(): String {
+        val report = decodedChildSecurityStatusReport
+            ?: childSecurityReportCodec.decode(lastChildSecurityStatusReportPayload)
+                .let { result -> (result as? DebugChildSecurityReportCodecResult.Decoded)?.report }
+        val bypass = decodedBypassRiskReport
+            ?: bypassRiskReportCodec.decode(lastBypassRiskReportPayload)
+                .let { result -> (result as? DebugBypassRiskReportCodecResult.Decoded)?.report }
+        if (report == null) {
+            return listOf(
+                "Basic DNS Guard: Unknown",
+                "Readiness: Unknown",
+                "Import a child status report to review mode, policy, hardening, bypass risk, and DNS counters.",
+                "DNS-only mode is not full protection.",
+                "Production sync will use encrypted relay later.",
+            ).joinToString(separator = "\n")
+        }
+        decodedChildSecurityStatusReport = report
+        val modeLabel = when (report.activeMode) {
+            ChildSecurityActiveMode.BASIC_DNS_GUARD -> "Running"
+            ChildSecurityActiveMode.DNS_ONLY_LAB -> "DNS-only lab active"
+            ChildSecurityActiveMode.FULL_TUNNEL_LAB -> "Full-tunnel lab active"
+            ChildSecurityActiveMode.NONE -> "Idle or stopped"
+        }
+        val readiness = when (report.overallStatus) {
+            ChildSecurityOverallStatus.READY_FOR_LAB_TEST -> "Ready for DNS Guard"
+            ChildSecurityOverallStatus.PIN_COMPROMISE_SUSPECTED -> "High risk"
+            ChildSecurityOverallStatus.NEEDS_ATTENTION,
+            ChildSecurityOverallStatus.SETUP_IN_PROGRESS,
+            ChildSecurityOverallStatus.VPN_STOPPED -> "Needs attention"
+            ChildSecurityOverallStatus.NOT_STARTED,
+            ChildSecurityOverallStatus.UNKNOWN -> "Unknown"
+        }
+        return listOf(
+            "Basic DNS Guard: $modeLabel",
+            "Readiness: $readiness",
+            "Active policy version: ${report.policyVersion ?: "none"}",
+            "Active policy preset: ${report.activePolicyPreset ?: "unspecified"}",
+            "Hardening highlights: ${report.setupSummaryLabel ?: "Unknown"}",
+            "Bypass risk summary: ${bypass?.summary?.overallStatus?.toDisplayLabel() ?: report.bypassRiskLabel ?: "Unknown"}",
+            "DNS blocked responses: ${report.dnsBlockedResponseCount}",
+            "DNS allowed forwarded: ${report.dnsAllowedForwardedCount}",
+            "DNS allowed failures: ${report.dnsAllowedForwardFailureCount}",
+            "Non-DNS traffic is not inspected in DNS-only mode.",
+            "DNS-only mode is not full protection.",
+            "Production sync will use encrypted relay later.",
+        ).joinToString(separator = "\n")
     }
 
     private fun createChildSecurityStatusOutput(): String {
@@ -625,7 +709,9 @@ class ParentMainActivity : Activity() {
             "DNS blocked responses: ${report.dnsBlockedResponseCount}",
             "DNS allowed forwarded: ${report.dnsAllowedForwardedCount}",
             "DNS allowed forward failures: ${report.dnsAllowedForwardFailureCount}",
-            if (report.activeMode == ChildSecurityActiveMode.DNS_ONLY_LAB) {
+            if (report.activeMode == ChildSecurityActiveMode.BASIC_DNS_GUARD ||
+                report.activeMode == ChildSecurityActiveMode.DNS_ONLY_LAB
+            ) {
                 "Non-DNS traffic is not inspected in DNS-only mode."
             } else {
                 "DNS-only lab is not active."
@@ -1051,6 +1137,7 @@ class ParentMainActivity : Activity() {
     private fun ChildSecurityActiveMode.toDisplayLabel(): String {
         return when (this) {
             ChildSecurityActiveMode.NONE -> "None"
+            ChildSecurityActiveMode.BASIC_DNS_GUARD -> "Basic DNS Guard active"
             ChildSecurityActiveMode.DNS_ONLY_LAB -> "DNS-only lab active"
             ChildSecurityActiveMode.FULL_TUNNEL_LAB -> "Full-tunnel lab active"
         }

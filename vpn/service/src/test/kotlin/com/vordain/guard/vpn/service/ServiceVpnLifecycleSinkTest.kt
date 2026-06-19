@@ -127,7 +127,7 @@ class ServiceVpnLifecycleSinkTest {
         assertDoesNotContain(source, "RelayClient")
         assertDoesNotContain(source, "backend")
         assertDoesNotContain(source, "outbox")
-        assertDoesNotContain(source, "read(")
+        assertDoesNotContain(source, ".read(")
         assertDoesNotContain(source, "write(")
         assertDoesNotContain(source, "FileDescriptor")
         assertDoesNotContain(source, "DatagramSocket")

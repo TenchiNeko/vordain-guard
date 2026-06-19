@@ -7,4 +7,6 @@ object VordainVpnServiceActions {
     const val ACTION_STOP_LAB_CAPTURE = "com.vordain.guard.vpn.service.action.STOP_LAB_CAPTURE"
     const val ACTION_START_DNS_ONLY_LAB = "com.vordain.guard.vpn.service.action.START_DNS_ONLY_LAB"
     const val ACTION_STOP_DNS_ONLY_LAB = "com.vordain.guard.vpn.service.action.STOP_DNS_ONLY_LAB"
+    const val ACTION_START_BASIC_DNS_GUARD = "com.vordain.guard.vpn.service.action.START_BASIC_DNS_GUARD"
+    const val ACTION_STOP_BASIC_DNS_GUARD = "com.vordain.guard.vpn.service.action.STOP_BASIC_DNS_GUARD"
 }

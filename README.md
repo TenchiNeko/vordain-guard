@@ -2,6 +2,10 @@
 
 Vordain Guard is an Android-first phone safety system from Vordain Labs LLC for high-risk family safety cases where a child is actively bypassing ordinary parental controls.
 
+## Local MVP Status
+
+The current Android build exposes a local/debug Basic DNS Guard MVP. Basic DNS Guard uses DNS-only enforcement, blocks normal DNS-based access for blocked domains, forwards allowed DNS through the lab upstream path, and does not inspect or forward non-DNS traffic. It is not full protection, filtering is not production-enabled yet, and backend/relay production sync is not enabled.
+
 The first product promise for Vordain Guard Basic is:
 
 ```text

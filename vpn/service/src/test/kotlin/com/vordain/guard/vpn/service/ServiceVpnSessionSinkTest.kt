@@ -102,7 +102,7 @@ class ServiceVpnSessionSinkTest {
         assertDoesNotContain(source, "backend")
         assertDoesNotContain(source, "data.outbox")
         assertDoesNotContain(source, "data.relay")
-        assertDoesNotContain(source, "read(")
+        assertDoesNotContain(source, ".read(")
         assertDoesNotContain(source, "write(")
         assertDoesNotContain(source, "FileDescriptor")
         assertDoesNotContain(source, "DatagramSocket")

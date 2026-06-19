@@ -13,12 +13,15 @@ object VpnForegroundNotification {
     const val TITLE = "Vordain Guard VPN shell active"
     const val BODY = "Protection service is running for setup testing"
 
-    fun build(context: Context): Notification {
+    fun build(
+        context: Context,
+        mode: VpnForegroundNotificationMode = VpnForegroundNotificationMode.SHELL,
+    ): Notification {
         ensureChannel(context)
         return Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(TITLE)
-            .setContentText(BODY)
+            .setContentTitle(mode.title)
+            .setContentText(mode.body)
             .setOngoing(true)
             .setShowWhen(false)
             .build()
@@ -37,4 +40,26 @@ object VpnForegroundNotification {
         )
         notificationManager.createNotificationChannel(channel)
     }
+}
+
+enum class VpnForegroundNotificationMode(
+    val title: String,
+    val body: String,
+) {
+    SHELL(
+        title = VpnForegroundNotification.TITLE,
+        body = VpnForegroundNotification.BODY,
+    ),
+    BASIC_DNS_GUARD(
+        title = "Vordain Guard DNS mode",
+        body = "DNS-only enforcement is running. Not full protection.",
+    ),
+    DNS_ONLY_LAB(
+        title = "Vordain DNS lab",
+        body = "Local DNS lab is running. Not full protection.",
+    ),
+    FULL_TUNNEL_LAB(
+        title = "Vordain full-tunnel lab",
+        body = "Traffic may stop. Lab mode only.",
+    ),
 }

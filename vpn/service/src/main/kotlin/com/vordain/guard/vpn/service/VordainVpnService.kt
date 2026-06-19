@@ -32,7 +32,7 @@ class VordainVpnService : VpnService() {
             VpnServiceCommandResult.HandledStart -> {
                 startForeground(
                     VpnForegroundNotification.NOTIFICATION_ID,
-                    VpnForegroundNotification.build(this),
+                    VpnForegroundNotification.build(this, VpnForegroundNotificationMode.SHELL),
                 )
                 establishTunnel(VpnTunnelSpec.establishOnlySmokeTest(), capturePackets = false)
                 START_STICKY
@@ -40,7 +40,7 @@ class VordainVpnService : VpnService() {
             VpnServiceCommandResult.HandledLabStart -> {
                 startForeground(
                     VpnForegroundNotification.NOTIFICATION_ID,
-                    VpnForegroundNotification.build(this),
+                    VpnForegroundNotification.build(this, VpnForegroundNotificationMode.FULL_TUNNEL_LAB),
                 )
                 establishTunnel(
                     spec = VpnTunnelSpec.labFullTunnelCapture(),
@@ -52,12 +52,24 @@ class VordainVpnService : VpnService() {
             VpnServiceCommandResult.HandledDnsOnlyLabStart -> {
                 startForeground(
                     VpnForegroundNotification.NOTIFICATION_ID,
-                    VpnForegroundNotification.build(this),
+                    VpnForegroundNotification.build(this, VpnForegroundNotificationMode.DNS_ONLY_LAB),
                 )
                 establishTunnel(
                     spec = VpnTunnelSpec.dnsOnlyLabFiltering(),
                     capturePackets = true,
                     labCaptureMode = ServiceLabCaptureMode.DNS_ONLY,
+                )
+                START_STICKY
+            }
+            VpnServiceCommandResult.HandledBasicDnsGuardStart -> {
+                startForeground(
+                    VpnForegroundNotification.NOTIFICATION_ID,
+                    VpnForegroundNotification.build(this, VpnForegroundNotificationMode.BASIC_DNS_GUARD),
+                )
+                establishTunnel(
+                    spec = VpnTunnelSpec.basicDnsGuard(),
+                    capturePackets = true,
+                    labCaptureMode = ServiceLabCaptureMode.BASIC_DNS_GUARD,
                 )
                 START_STICKY
             }
@@ -114,6 +126,9 @@ class VordainVpnService : VpnService() {
                         ServiceLabCaptureMode.DNS_ONLY -> {
                             LabCaptureDebugStatus.configureDnsOnlyProtectedDnsUpstream(this)
                         }
+                        ServiceLabCaptureMode.BASIC_DNS_GUARD -> {
+                            LabCaptureDebugStatus.configureDnsOnlyProtectedDnsUpstream(this)
+                        }
                         ServiceLabCaptureMode.NONE -> Unit
                     }
                     captureLoop = AndroidTunPacketCaptureLoop(
@@ -121,12 +136,15 @@ class VordainVpnService : VpnService() {
                         observer = LabCaptureDebugStatus.observer(),
                     ).also(AndroidTunPacketCaptureLoop::start)
                     startLabWatchdog(
-                        config = if (labCaptureMode == ServiceLabCaptureMode.DNS_ONLY) {
+                        config = if (labCaptureMode == ServiceLabCaptureMode.DNS_ONLY ||
+                            labCaptureMode == ServiceLabCaptureMode.BASIC_DNS_GUARD
+                        ) {
                             DNS_ONLY_LAB_WATCHDOG_CONFIG
                         } else {
                             FULL_TUNNEL_LAB_WATCHDOG_CONFIG
                         },
                         reason = when (labCaptureMode) {
+                            ServiceLabCaptureMode.BASIC_DNS_GUARD -> "Basic DNS Guard auto-stop watchdog active"
                             ServiceLabCaptureMode.DNS_ONLY -> "DNS-only lab auto-stop watchdog active"
                             ServiceLabCaptureMode.FULL_TUNNEL -> "full-tunnel lab auto-stop watchdog active"
                             ServiceLabCaptureMode.NONE -> "lab auto-stop watchdog active"
@@ -217,4 +235,5 @@ private enum class ServiceLabCaptureMode {
     NONE,
     FULL_TUNNEL,
     DNS_ONLY,
+    BASIC_DNS_GUARD,
 }

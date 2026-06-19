@@ -123,6 +123,18 @@ class VpnTunnelSpecTest {
     }
 
     @Test
+    fun basicDnsGuardSpecUsesDnsOnlyRouteWithoutDefaultRoutes() {
+        val spec = VpnTunnelSpec.basicDnsGuard()
+
+        assertEquals(listOf(VpnTunnelSpec.DNS_ONLY_LAB_DNS_SERVER), spec.dnsServers)
+        assertEquals(listOf(VpnTunnelRoute(address = VpnTunnelSpec.DNS_ONLY_LAB_DNS_SERVER, prefixLength = 32)), spec.routes)
+        assertFalse(spec.routes.any { it.address == "0.0.0.0" && it.prefixLength == 0 })
+        assertFalse(spec.routes.any { it.address == "::" && it.prefixLength == 0 })
+        assertFalse(spec.allowNormalTrafficRouting)
+        assertEquals("BASIC_DNS_GUARD", spec.modeLabel)
+    }
+
+    @Test
     fun fullTunnelLabSpecRemainsExplicitAndSeparate() {
         val spec = VpnTunnelSpec.labFullTunnelCapture()
 

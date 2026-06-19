@@ -54,6 +54,17 @@ data class VpnTunnelSpec(
             )
         }
 
+        fun basicDnsGuard(): VpnTunnelSpec {
+            return VpnTunnelSpec(
+                sessionName = "Vordain Guard Basic DNS Guard",
+                addresses = listOf(VpnTunnelAddress(address = "10.111.0.2", prefixLength = 32)),
+                routes = listOf(VpnTunnelRoute(address = DNS_ONLY_LAB_DNS_SERVER, prefixLength = 32)),
+                dnsServers = listOf(DNS_ONLY_LAB_DNS_SERVER),
+                labMode = true,
+                modeLabel = "BASIC_DNS_GUARD",
+            )
+        }
+
         const val DNS_ONLY_LAB_DNS_SERVER = "10.111.0.1"
     }
 }

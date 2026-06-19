@@ -44,6 +44,17 @@ class AuditTimelineReducerTest {
     }
 
     @Test
+    fun basicDnsGuardAuditTypesAreRepresented() {
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.BASIC_DNS_GUARD_STARTED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.BASIC_DNS_GUARD_STOPPED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.BASIC_DNS_GUARD_START_NEEDS_ATTENTION))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.BASIC_DNS_DIAGNOSTICS_COPIED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.PARENT_POLICY_EDITED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.PARENT_POLICY_SHARED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.CHILD_DNS_GUARD_STATUS_IMPORTED))
+    }
+
+    @Test
     fun sourceHasNoForbiddenTerms() {
         val source = Files.walk(Path("src/main"))
             .filter(Files::isRegularFile)

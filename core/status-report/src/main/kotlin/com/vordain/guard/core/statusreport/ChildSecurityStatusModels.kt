@@ -30,6 +30,7 @@ enum class ChildSecuritySignal {
 
 enum class ChildSecurityActiveMode {
     NONE,
+    BASIC_DNS_GUARD,
     DNS_ONLY_LAB,
     FULL_TUNNEL_LAB,
 }
@@ -93,3 +94,24 @@ data class ChildSecurityStatusInput(
     val dnsAllowedForwardedCount: Long = 0,
     val dnsAllowedForwardFailureCount: Long = 0,
 )
+
+data class BasicDnsGuardDiagnosticsReport(
+    val childDeviceId: DeviceId,
+    val generatedAtMillis: Long,
+    val mode: ChildSecurityActiveMode,
+    val activePolicySource: String,
+    val activePolicyVersion: String?,
+    val activePreset: String?,
+    val readinessStatus: String,
+    val hardeningSummary: String,
+    val bypassRiskSummary: String,
+    val dnsBlockedCount: Long,
+    val dnsAllowedForwardedCount: Long,
+    val encryptedDnsBlockedCount: Long,
+    val dnsFailureCount: Long,
+    val warningText: String = WARNING_TEXT,
+) {
+    companion object {
+        const val WARNING_TEXT = "Basic DNS Guard is DNS-only enforcement. Not full protection."
+    }
+}
