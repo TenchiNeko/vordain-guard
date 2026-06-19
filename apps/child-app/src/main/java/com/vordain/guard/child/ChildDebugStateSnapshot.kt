@@ -1,0 +1,23 @@
+package com.vordain.guard.child
+
+data class ChildDebugStateSnapshot(
+    val childDeviceId: String = DEFAULT_CHILD_DEVICE_ID,
+    val latestPolicyPayload: String? = null,
+    val latestPolicyVersion: String? = null,
+    val latestAllowDomainsCsv: String? = null,
+    val latestBlockDomainsCsv: String? = null,
+    val vpnPermissionStatusLabel: String = ChildVpnSmokeLabels.PERMISSION_UNKNOWN,
+    val lastVpnCommandLabel: String = ChildVpnSmokeLabels.COMMAND_NONE,
+    val shellStatusLabel: String = ChildVpnSmokeLabels.STATUS_NOT_RUNNING,
+    val setupVpnPermissionStatus: String = SetupCheckState.UNKNOWN.name,
+    val setupStartShellStatus: String = SetupCheckState.UNKNOWN.name,
+    val setupForegroundNotificationStatus: String = SetupCheckState.UNKNOWN.name,
+    val setupAlwaysOnVpnStatus: String = SetupCheckState.UNKNOWN.name,
+    val setupBlockWithoutVpnStatus: String = SetupCheckState.UNKNOWN.name,
+    val setupBatteryOptimizationStatus: String = SetupCheckState.UNKNOWN.name,
+    val lastDiagnosticsText: String? = null,
+) {
+    companion object {
+        const val DEFAULT_CHILD_DEVICE_ID = "child-debug-device"
+    }
+}

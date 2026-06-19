@@ -25,6 +25,7 @@ import com.vordain.guard.core.policysync.SignedPolicyUpdate
 
 class ParentMainActivity : Activity() {
     private val codec = DebugPolicyUpdateCodec()
+    private lateinit var stateStore: ParentDebugStateStore
     private lateinit var targetDeviceInput: EditText
     private lateinit var policyVersionInput: EditText
     private lateinit var allowDomainsInput: EditText
@@ -36,7 +37,13 @@ class ParentMainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        stateStore = ParentDebugStateStore(this)
         setContentView(createView())
+    }
+
+    override fun onPause() {
+        stateStore.save(createSnapshot())
+        super.onPause()
     }
 
     private fun createView(): ScrollView {
@@ -49,12 +56,14 @@ class ParentMainActivity : Activity() {
         layout.addView(centerLabel("Debug policy handoff", 18f))
         layout.addView(centerLabel("Local debug only - no server delivery.", 16f))
 
-        targetDeviceInput = editText("child-debug-device")
-        policyVersionInput = editText("debug-1")
-        allowDomainsInput = editText("school.edu")
-        blockDomainsInput = editText("proxy.example")
-        blockKnownProxyInput = checkBox("Block known proxy domains", checked = true)
-        blockUnknownInput = checkBox("Block unknown domains", checked = false)
+        val snapshot = stateStore.load()
+        lastPayload = snapshot.latestGeneratedPayload.orEmpty()
+        targetDeviceInput = editText(snapshot.targetChildDeviceId)
+        policyVersionInput = editText(snapshot.policyVersion)
+        allowDomainsInput = editText(snapshot.allowDomainsText)
+        blockDomainsInput = editText(snapshot.blockDomainsText)
+        blockKnownProxyInput = checkBox("Block known proxy domains", checked = snapshot.blockKnownProxyDomains)
+        blockUnknownInput = checkBox("Block unknown domains", checked = snapshot.blockUnknownDomains)
 
         layout.addView(sectionTitle("Debug policy fields"))
         layout.addView(labeledField("Target child device id", targetDeviceInput))
@@ -72,7 +81,7 @@ class ParentMainActivity : Activity() {
         })
 
         layout.addView(sectionTitle("Payload preview"))
-        payloadOutput = valueLabel("No debug policy update built yet", 14f)
+        payloadOutput = valueLabel(lastPayload.ifBlank { "No debug policy update built yet" }, 14f)
         layout.addView(payloadOutput)
         layout.addView(valueLabel("Production policy sync will use signed encrypted delivery later.", 14f))
 
@@ -111,6 +120,7 @@ class ParentMainActivity : Activity() {
         payloadOutput.text = result.getOrElse { throwable ->
             "Could not build debug policy update: ${throwable.message}"
         }
+        stateStore.save(createSnapshot())
     }
 
     private fun copyPayload() {
@@ -123,6 +133,19 @@ class ParentMainActivity : Activity() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Vordain debug policy update", lastPayload))
         payloadOutput.text = "$lastPayload\n\nCopied debug policy update."
+        stateStore.save(createSnapshot())
+    }
+
+    private fun createSnapshot(): ParentDebugStateSnapshot {
+        return ParentDebugStateSnapshot(
+            targetChildDeviceId = targetDeviceInput.text.toString(),
+            policyVersion = policyVersionInput.text.toString(),
+            allowDomainsText = allowDomainsInput.text.toString(),
+            blockDomainsText = blockDomainsInput.text.toString(),
+            blockKnownProxyDomains = blockKnownProxyInput.isChecked,
+            blockUnknownDomains = blockUnknownInput.isChecked,
+            latestGeneratedPayload = lastPayload.takeIf(String::isNotBlank),
+        )
     }
 
     private fun String.toDomainSet(): Set<DomainName> {

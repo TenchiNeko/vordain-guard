@@ -16,6 +16,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.vordain.guard.core.model.AppTrafficMode
 import com.vordain.guard.core.model.DeviceId
+import com.vordain.guard.core.model.DomainName
+import com.vordain.guard.core.policysync.DebugPolicyUpdateCodec
+import com.vordain.guard.core.policysync.DebugPolicyUpdateCodecResult
 import com.vordain.guard.data.review.ReviewRequestReason
 import com.vordain.guard.vpn.service.VordainVpnServiceIntents
 import com.vordain.guard.vpn.service.VpnPermissionIntentFactory
@@ -23,11 +26,13 @@ import com.vordain.guard.vpn.service.VpnPrepareResult
 
 class ChildMainActivity : Activity() {
     private val vpnPermissionIntentFactory = VpnPermissionIntentFactory()
+    private val policyCodec = DebugPolicyUpdateCodec()
     private val policyDemo = ChildDebugPolicyDemo()
     private val compatibilityDemo = ChildDebugCompatibilityDemo { System.currentTimeMillis() }
     private val reviewDemo = ChildDebugReviewDemo()
     private val policyHandoff = ChildDebugPolicyHandoff { System.currentTimeMillis() }
     private val diagnosticsFormatter = ChildDebugDiagnosticsFormatter()
+    private lateinit var stateStore: ChildDebugStateStore
     private lateinit var statusText: TextView
     private lateinit var vpnPermissionText: TextView
     private lateinit var lastCommandText: TextView
@@ -48,6 +53,15 @@ class ChildMainActivity : Activity() {
     private var vpnPermissionStatus: String = ChildVpnSmokeLabels.PERMISSION_UNKNOWN
     private var lastCommand: String = ChildVpnSmokeLabels.COMMAND_NONE
     private var shellStatus: String = ChildVpnSmokeLabels.STATUS_NOT_RUNNING
+    private var childDeviceId: String = ChildDebugStateSnapshot.DEFAULT_CHILD_DEVICE_ID
+    private var latestPolicyPayload: String? = null
+    private var latestAllowDomainsCsv: String? = null
+    private var latestBlockDomainsCsv: String? = null
+    private var setupForegroundNotificationStatus: SetupCheckState = SetupCheckState.UNKNOWN
+    private var setupAlwaysOnVpnStatus: SetupCheckState = SetupCheckState.UNKNOWN
+    private var setupBlockWithoutVpnStatus: SetupCheckState = SetupCheckState.UNKNOWN
+    private var setupBatteryOptimizationStatus: SetupCheckState = SetupCheckState.UNKNOWN
+    private var lastDiagnosticsText: String? = null
     private var policyResult: ChildDebugPolicyResult? = null
     private var policyHandoffResult: ChildDebugPolicyHandoffResult? = null
     private var currentPolicyVersion: String = "debug-tablet-policy"
@@ -57,8 +71,16 @@ class ChildMainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        stateStore = ChildDebugStateStore(this)
+        restoreState(stateStore.load())
         setContentView(createSmokeTestView())
-        setStatus(ChildVpnSmokeLabels.STATUS_NOT_RUNNING)
+        statusText.text = shellStatus
+        refreshDiagnosticsViews()
+    }
+
+    override fun onPause() {
+        saveCurrentState()
+        super.onPause()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -125,8 +147,8 @@ class ChildMainActivity : Activity() {
         layout.addView(policyOutputText)
 
         layout.addView(sectionTitle("Debug policy handoff"))
-        policyHandoffTargetInput = editText("child-debug-device")
-        policyHandoffPayloadInput = multiLineEditText("")
+        policyHandoffTargetInput = editText(childDeviceId)
+        policyHandoffPayloadInput = multiLineEditText(latestPolicyPayload.orEmpty())
         layout.addView(labeledField("Target child device id", policyHandoffTargetInput))
         layout.addView(labeledField("Paste debug policy update payload", policyHandoffPayloadInput))
         layout.addView(button("Apply debug policy update") {
@@ -135,7 +157,14 @@ class ChildMainActivity : Activity() {
         layout.addView(button("Clear policy update result") {
             clearPolicyHandoffResult()
         })
-        policyHandoffOutputText = valueLabel(policyDemo.policySummary(currentPolicyVersion), textSize = 14f)
+        policyHandoffOutputText = valueLabel(
+            buildString {
+                append(policyDemo.policySummary(currentPolicyVersion))
+                latestAllowDomainsCsv?.let { append("\nLatest allow domains: $it") }
+                latestBlockDomainsCsv?.let { append("\nLatest block domains: $it") }
+            },
+            textSize = 14f,
+        )
         layout.addView(policyHandoffOutputText)
 
         layout.addView(sectionTitle("Compatibility Mode tester"))
@@ -321,16 +350,23 @@ class ChildMainActivity : Activity() {
     }
 
     private fun applyDebugPolicyUpdate() {
+        childDeviceId = policyHandoffTargetInput.text.toString().trim().ifBlank {
+            ChildDebugStateSnapshot.DEFAULT_CHILD_DEVICE_ID
+        }
         val result = policyHandoff.apply(
-            expectedDeviceId = DeviceId(policyHandoffTargetInput.text.toString().trim()),
+            expectedDeviceId = DeviceId(childDeviceId),
             payload = policyHandoffPayloadInput.text.toString(),
         )
         policyHandoffResult = result
         if (result.accepted && result.policy != null && result.policyVersion != null) {
             policyDemo.replacePolicy(result.policy)
             currentPolicyVersion = result.policyVersion.value
+            latestPolicyPayload = policyHandoffPayloadInput.text.toString()
+            latestAllowDomainsCsv = result.policy.allowedDomains.toCsv()
+            latestBlockDomainsCsv = result.policy.blockedDomains.toCsv()
         }
         policyHandoffOutputText.text = result.asDisplayText()
+        saveCurrentState()
         refreshDiagnosticsViews()
     }
 
@@ -367,21 +403,25 @@ class ChildMainActivity : Activity() {
     private fun setStatus(status: String) {
         statusText.text = status
         shellStatus = status
+        saveCurrentState()
         refreshDiagnosticsViews()
     }
 
     private fun setVpnPermissionStatus(status: String) {
         vpnPermissionStatus = status
+        saveCurrentState()
         refreshDiagnosticsViews()
     }
 
     private fun setLastCommand(command: String) {
         lastCommand = command
+        saveCurrentState()
         refreshDiagnosticsViews()
     }
 
     private fun setShellStatus(status: String) {
         shellStatus = status
+        saveCurrentState()
         refreshDiagnosticsViews()
     }
 
@@ -390,9 +430,11 @@ class ChildMainActivity : Activity() {
             diagnostics = createDiagnostics(),
             state = createDashboardState(),
         )
+        lastDiagnosticsText = diagnostics
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Vordain Guard diagnostics", diagnostics))
         diagnosticsText.text = ChildVpnSmokeLabels.DIAGNOSTICS_COPIED
+        saveCurrentState()
     }
 
     private fun refreshDiagnosticsViews() {
@@ -452,9 +494,9 @@ class ChildMainActivity : Activity() {
             } else {
                 SetupCheckState.UNKNOWN
             },
-            alwaysOnVpn = SetupCheckState.UNKNOWN,
-            blockConnectionsWithoutVpn = SetupCheckState.UNKNOWN,
-            batteryOptimizationWarning = SetupCheckState.UNKNOWN,
+            alwaysOnVpn = setupAlwaysOnVpnStatus,
+            blockConnectionsWithoutVpn = setupBlockWithoutVpnStatus,
+            batteryOptimizationWarning = setupBatteryOptimizationStatus,
             appProtection = if (shellStatus == ChildVpnSmokeLabels.STATUS_SHELL_ACTIVE) {
                 SetupCheckState.USER_CONFIRMED
             } else {
@@ -467,12 +509,80 @@ class ChildMainActivity : Activity() {
         return listOf(
             "VPN permission: ${checklist.vpnPermission}",
             "Start shell: $shellStatus",
-            "Foreground notification: manual check",
+            "Foreground notification: $setupForegroundNotificationStatus - manual check",
             "Always-on VPN: ${checklist.alwaysOnVpn} - manual check",
             "Block connections without VPN: ${checklist.blockConnectionsWithoutVpn} - manual check",
             "Battery optimization: ${checklist.batteryOptimizationWarning} - manual check",
             "App protection: ${checklist.appProtection}",
         ).joinToString(separator = "\n")
+    }
+
+    private fun restoreState(snapshot: ChildDebugStateSnapshot) {
+        childDeviceId = snapshot.childDeviceId.ifBlank { ChildDebugStateSnapshot.DEFAULT_CHILD_DEVICE_ID }
+        latestPolicyPayload = snapshot.latestPolicyPayload
+        currentPolicyVersion = snapshot.latestPolicyVersion ?: currentPolicyVersion
+        latestAllowDomainsCsv = snapshot.latestAllowDomainsCsv
+        latestBlockDomainsCsv = snapshot.latestBlockDomainsCsv
+        vpnPermissionStatus = snapshot.vpnPermissionStatusLabel
+        lastCommand = snapshot.lastVpnCommandLabel
+        shellStatus = snapshot.shellStatusLabel
+        setupForegroundNotificationStatus = snapshot.setupForegroundNotificationStatus.toSetupCheckState()
+        setupAlwaysOnVpnStatus = snapshot.setupAlwaysOnVpnStatus.toSetupCheckState()
+        setupBlockWithoutVpnStatus = snapshot.setupBlockWithoutVpnStatus.toSetupCheckState()
+        setupBatteryOptimizationStatus = snapshot.setupBatteryOptimizationStatus.toSetupCheckState()
+        lastDiagnosticsText = snapshot.lastDiagnosticsText
+
+        val payload = snapshot.latestPolicyPayload
+        if (!payload.isNullOrBlank()) {
+            val decoded = policyCodec.decode(payload)
+            if (decoded is DebugPolicyUpdateCodecResult.Decoded) {
+                policyDemo.replacePolicy(decoded.update.policy)
+                currentPolicyVersion = decoded.update.policyVersion.value
+                latestAllowDomainsCsv = decoded.update.policy.allowedDomains.toCsv()
+                latestBlockDomainsCsv = decoded.update.policy.blockedDomains.toCsv()
+            }
+        }
+    }
+
+    private fun saveCurrentState() {
+        if (!::stateStore.isInitialized) {
+            return
+        }
+        stateStore.save(
+            ChildDebugStateSnapshot(
+                childDeviceId = if (::policyHandoffTargetInput.isInitialized) {
+                    policyHandoffTargetInput.text.toString().ifBlank { childDeviceId }
+                } else {
+                    childDeviceId
+                },
+                latestPolicyPayload = latestPolicyPayload,
+                latestPolicyVersion = currentPolicyVersion,
+                latestAllowDomainsCsv = latestAllowDomainsCsv,
+                latestBlockDomainsCsv = latestBlockDomainsCsv,
+                vpnPermissionStatusLabel = vpnPermissionStatus,
+                lastVpnCommandLabel = lastCommand,
+                shellStatusLabel = shellStatus,
+                setupVpnPermissionStatus = createSetupChecklist().vpnPermission.name,
+                setupStartShellStatus = if (shellStatus == ChildVpnSmokeLabels.STATUS_NOT_RUNNING) {
+                    SetupCheckState.UNKNOWN.name
+                } else {
+                    SetupCheckState.USER_CONFIRMED.name
+                },
+                setupForegroundNotificationStatus = setupForegroundNotificationStatus.name,
+                setupAlwaysOnVpnStatus = setupAlwaysOnVpnStatus.name,
+                setupBlockWithoutVpnStatus = setupBlockWithoutVpnStatus.name,
+                setupBatteryOptimizationStatus = setupBatteryOptimizationStatus.name,
+                lastDiagnosticsText = lastDiagnosticsText,
+            ),
+        )
+    }
+
+    private fun String.toSetupCheckState(): SetupCheckState {
+        return runCatching { SetupCheckState.valueOf(this) }.getOrDefault(SetupCheckState.UNKNOWN)
+    }
+
+    private fun Set<DomainName>.toCsv(): String {
+        return map(DomainName::value).sorted().joinToString(separator = ",")
     }
 
     private companion object {
