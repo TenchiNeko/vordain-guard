@@ -180,7 +180,7 @@ class ParentMainActivity : Activity() {
 
         layout.addView(sectionTitle("Child security status"))
         layout.addView(valueLabel("This debug report is copy/paste only. Production will use encrypted relay later.", 14f))
-        layout.addView(valueLabel("Vordain does not receive PINs or credentials.", 14f))
+        layout.addView(valueLabel("Vordain does not receive PINs or secrets.", 14f))
         layout.addView(valueLabel(ChildSecurityStatusReport.WARNING_TEXT, 14f))
         layout.addView(labeledField("Paste child status report", childSecurityReportInput))
         layout.addView(button("Decode status report") {

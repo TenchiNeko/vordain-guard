@@ -30,6 +30,8 @@ data class LabDnsObservation(
 data class LabTrafficObservationStats(
     val packetCount: Long = 0,
     val byteCount: Long = 0,
+    val dnsUpstreamHost: String = "1.1.1.1",
+    val dnsUpstreamPort: Int = 53,
     val dnsPacketCount: Long = 0,
     val dnsQueryCount: Long = 0,
     val allowedDomainCount: Long = 0,
@@ -37,7 +39,11 @@ data class LabTrafficObservationStats(
     val alertOnlyDomainCount: Long = 0,
     val dnsBlockedResponseCount: Long = 0,
     val dnsAllowedDroppedCount: Long = 0,
+    val dnsAllowedForwardedCount: Long = 0,
+    val dnsAllowedForwardFailureCount: Long = 0,
+    val dnsAllowedForwardTimeoutCount: Long = 0,
     val dnsAlertDroppedCount: Long = 0,
+    val dnsResponseWriteSuccessCount: Long = 0,
     val dnsResponseWriteFailureCount: Long = 0,
     val malformedPacketCount: Long = 0,
     val malformedDnsCount: Long = 0,
@@ -49,6 +55,7 @@ data class LabTrafficObservationStats(
 enum class LabPacketAction {
     DROP,
     WRITE_DNS_BLOCK_RESPONSE,
+    WRITE_DNS_UPSTREAM_RESPONSE,
     IGNORE,
 }
 
@@ -74,4 +81,69 @@ data class LabPacketHandlingResult(
         result = 31 * result + (decisionSummary?.hashCode() ?: 0)
         return result
     }
+}
+
+class LabDnsUpstreamQuery(
+    val dnsPayload: ByteArray,
+    val upstreamHost: String,
+    val upstreamPort: Int,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is LabDnsUpstreamQuery) return false
+        return dnsPayload.contentEquals(other.dnsPayload) &&
+            upstreamHost == other.upstreamHost &&
+            upstreamPort == other.upstreamPort
+    }
+
+    override fun hashCode(): Int {
+        var result = dnsPayload.contentHashCode()
+        result = 31 * result + upstreamHost.hashCode()
+        result = 31 * result + upstreamPort
+        return result
+    }
+}
+
+class LabDnsUpstreamResult(
+    val success: Boolean,
+    val responsePayload: ByteArray?,
+    val reason: String,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is LabDnsUpstreamResult) return false
+        return success == other.success &&
+            responsePayload.contentEquals(other.responsePayload) &&
+            reason == other.reason
+    }
+
+    override fun hashCode(): Int {
+        var result = success.hashCode()
+        result = 31 * result + (responsePayload?.contentHashCode() ?: 0)
+        result = 31 * result + reason.hashCode()
+        return result
+    }
+
+    companion object {
+        fun success(responsePayload: ByteArray): LabDnsUpstreamResult {
+            return LabDnsUpstreamResult(
+                success = true,
+                responsePayload = responsePayload,
+                reason = "Upstream DNS response received",
+            )
+        }
+
+        fun failure(reason: String): LabDnsUpstreamResult {
+            return LabDnsUpstreamResult(success = false, responsePayload = null, reason = reason)
+        }
+    }
+}
+
+interface LabDnsUpstreamTransport {
+    fun query(query: LabDnsUpstreamQuery): LabDnsUpstreamResult
+}
+
+enum class LabDnsForwardingMode {
+    DISABLED,
+    LAB_UPSTREAM,
 }

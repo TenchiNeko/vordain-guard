@@ -3,11 +3,21 @@ package com.vordain.guard.vpn.service
 import android.content.Intent
 import android.net.VpnService
 import android.os.IBinder
+import com.vordain.guard.vpn.session.LabCaptureWatchdog
+import com.vordain.guard.vpn.session.LabCaptureWatchdogConfig
+import com.vordain.guard.vpn.session.LabCaptureWatchdogState
 import com.vordain.guard.vpn.session.VpnTunnelSpec
+import java.util.concurrent.atomic.AtomicBoolean
 
 class VordainVpnService : VpnService() {
     private var tunnelHandle: AndroidVpnTunnelHandle? = null
     private var captureLoop: AndroidTunPacketCaptureLoop? = null
+    private val labWatchdog = LabCaptureWatchdog()
+    private val labWatchdogConfig = LabCaptureWatchdogConfig()
+    private val labWatchdogRunning = AtomicBoolean(false)
+    @Volatile
+    private var labWatchdogState: LabCaptureWatchdogState = LabCaptureWatchdogState.inactive()
+    private var labWatchdogThread: Thread? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -81,10 +91,14 @@ class VordainVpnService : VpnService() {
                 closeTunnel()
                 tunnelHandle = result.handle
                 if (capturePackets) {
+                    LabCaptureDebugStatus.configureProtectedDnsUpstream(this)
                     captureLoop = AndroidTunPacketCaptureLoop(
                         descriptor = result.handle.descriptor,
                         observer = LabCaptureDebugStatus.observer(),
                     ).also(AndroidTunPacketCaptureLoop::start)
+                    startLabWatchdog()
+                } else {
+                    stopLabWatchdog("normal shell established")
                 }
                 sessionSink.onVpnStarted()
                 lifecycleSink.onVpnStarted()
@@ -99,10 +113,55 @@ class VordainVpnService : VpnService() {
     }
 
     private fun closeTunnel() {
+        stopLabWatchdog("lab capture stopped")
         captureLoop?.stop()
         captureLoop = null
         tunnelHandle?.close()
         tunnelHandle = null
+    }
+
+    private fun startLabWatchdog() {
+        val now = System.currentTimeMillis()
+        labWatchdogState = labWatchdog.start(
+            config = labWatchdogConfig,
+            currentTimeMillis = now,
+            reason = "lab DNS enforcement auto-stop watchdog active",
+        )
+        LabCaptureDebugStatus.updateWatchdogState(labWatchdogState)
+        if (!labWatchdogState.active || !labWatchdogRunning.compareAndSet(false, true)) {
+            return
+        }
+        val expiresAt = labWatchdogState.expiresAtMillis ?: return
+        labWatchdogThread = Thread({
+            val delayMillis = (expiresAt - System.currentTimeMillis()).coerceAtLeast(0L)
+            try {
+                Thread.sleep(delayMillis)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+            if (labWatchdogRunning.get() && labWatchdog.isExpired(labWatchdogState, System.currentTimeMillis())) {
+                closeTunnel()
+                sessionSink.onVpnStopped()
+                lifecycleSink.onVpnStopped()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        }, "VordainLabWatchdog").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun stopLabWatchdog(reason: String) {
+        if (labWatchdogRunning.getAndSet(false)) {
+            val thread = labWatchdogThread
+            if (thread != null && thread != Thread.currentThread()) {
+                thread.interrupt()
+            }
+            labWatchdogThread = null
+        }
+        labWatchdogState = labWatchdog.stop(reason)
+        LabCaptureDebugStatus.updateWatchdogState(labWatchdogState)
     }
 
     companion object {

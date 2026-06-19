@@ -11,6 +11,7 @@ interface LabTrafficObserver {
             decisionSummary = "Packet dropped; active lab response handling is not implemented by this observer",
         )
     }
+    fun markDnsResponseWriteSuccess(observedAtMillis: Long): LabTrafficObservationStats = snapshot()
     fun markDnsResponseWriteFailure(observedAtMillis: Long): LabTrafficObservationStats = snapshot()
     fun markStopped(stoppedAtMillis: Long): LabTrafficObservationStats
     fun snapshot(): LabTrafficObservationStats

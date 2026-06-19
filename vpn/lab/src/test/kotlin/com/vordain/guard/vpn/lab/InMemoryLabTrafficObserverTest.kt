@@ -1,5 +1,10 @@
 package com.vordain.guard.vpn.lab
 
+import com.vordain.guard.core.model.AppPackageName
+import com.vordain.guard.core.model.DomainName
+import com.vordain.guard.core.model.LockdownMode
+import com.vordain.guard.core.model.PolicyId
+import com.vordain.guard.core.policy.Policy
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -138,7 +143,80 @@ class InMemoryLabTrafficObserverTest {
         assertEquals(LabPacketAction.DROP, result.action)
         assertEquals(null, result.responseBytes)
         assertEquals(1, result.stats.dnsAllowedDroppedCount)
-        assertTrue(result.decisionSummary.orEmpty().contains("forwarding not implemented"))
+        assertTrue(result.decisionSummary.orEmpty().contains("forwarding disabled"))
+    }
+
+    @Test
+    fun blockedDnsDomainDoesNotCallUpstreamTransport() {
+        val upstream = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload()))
+        val observer = InMemoryLabTrafficObserver(
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = upstream,
+        )
+        val packet = dnsPacketFor("blocked.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_BLOCK_RESPONSE, result.action)
+        assertEquals(0, upstream.callCount)
+    }
+
+    @Test
+    fun allowedDnsDomainCallsUpstreamTransport() {
+        val upstream = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload()))
+        val observer = InMemoryLabTrafficObserver(
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = upstream,
+        )
+        val packet = dnsPacketFor("allowed.example")
+
+        observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(1, upstream.callCount)
+        assertEquals("1.1.1.1", upstream.lastQuery?.upstreamHost)
+        assertEquals(53, upstream.lastQuery?.upstreamPort)
+    }
+
+    @Test
+    fun allowedDnsWithUpstreamSuccessReturnsResponseBytes() {
+        val observer = InMemoryLabTrafficObserver(
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = RecordingUpstreamTransport(LabDnsUpstreamResult.success(dnsResponsePayload())),
+        )
+        val packet = dnsPacketFor("allowed.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_UPSTREAM_RESPONSE, result.action)
+        assertNotNull(result.responseBytes)
+        assertEquals(1, result.stats.dnsAllowedForwardedCount)
+    }
+
+    @Test
+    fun allowedDnsWithUpstreamFailureReturnsDropAndIncrementsFailureCount() {
+        val observer = InMemoryLabTrafficObserver(
+            initialForwardingMode = LabDnsForwardingMode.LAB_UPSTREAM,
+            initialUpstreamTransport = RecordingUpstreamTransport(LabDnsUpstreamResult.failure("timeout waiting for DNS")),
+        )
+        val packet = dnsPacketFor("allowed.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.DROP, result.action)
+        assertEquals(1, result.stats.dnsAllowedForwardFailureCount)
+        assertEquals(1, result.stats.dnsAllowedForwardTimeoutCount)
+    }
+
+    @Test
+    fun alertOnlyDnsBehaviorIsDroppedInLabMode() {
+        val observer = InMemoryLabTrafficObserver(initialPolicy = monitorPolicy())
+        val packet = dnsPacketFor("unknown.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.DROP, result.action)
+        assertEquals(1, result.stats.dnsAlertDroppedCount)
+        assertTrue(result.decisionSummary.orEmpty().contains("Alert-only DNS"))
     }
 
     @Test
@@ -169,6 +247,15 @@ class InMemoryLabTrafficObserverTest {
         val stats = observer.markDnsResponseWriteFailure(observedAtMillis = 1_000L)
 
         assertEquals(1, stats.dnsResponseWriteFailureCount)
+    }
+
+    @Test
+    fun writeSuccessCounterCanBeIncrementedByCaptureLoop() {
+        val observer = InMemoryLabTrafficObserver()
+
+        val stats = observer.markDnsResponseWriteSuccess(observedAtMillis = 1_000L)
+
+        assertEquals(1, stats.dnsResponseWriteSuccessCount)
     }
 
     @Test
@@ -209,6 +296,15 @@ class InMemoryLabTrafficObserverTest {
         return message
     }
 
+    private fun dnsResponsePayload(transactionId: Int = 0x1234): ByteArray {
+        val response = ByteArray(12)
+        response.writeUnsignedShort(0, transactionId)
+        response[2] = 0x81.toByte()
+        response[3] = 0x80.toByte()
+        response.writeUnsignedShort(4, 1)
+        return response
+    }
+
     private fun ipv4UdpPacket(payload: ByteArray, sourcePort: Int, destinationPort: Int): ByteArray {
         val packet = ByteArray(20 + 8 + payload.size)
         packet[0] = 0x45
@@ -225,6 +321,19 @@ class InMemoryLabTrafficObserverTest {
         return packet
     }
 
+    private fun monitorPolicy(): Policy {
+        return Policy(
+            id = PolicyId("monitor-lab-policy"),
+            mode = LockdownMode.MONITOR_ONLY,
+            allowedDomains = emptySet<DomainName>(),
+            blockedDomains = emptySet<DomainName>(),
+            allowedPackages = emptySet<AppPackageName>(),
+            blockedPackages = emptySet<AppPackageName>(),
+            blockUnknownDomains = false,
+            blockKnownProxyDomains = false,
+        )
+    }
+
     private fun ByteArray.writeUnsignedShort(offset: Int, value: Int) {
         this[offset] = ((value ushr 8) and 0xff).toByte()
         this[offset + 1] = (value and 0xff).toByte()
@@ -238,6 +347,21 @@ class InMemoryLabTrafficObserverTest {
                 return current
             }
             current = current.parentFile ?: error("Could not find repository root")
+        }
+    }
+
+    private class RecordingUpstreamTransport(
+        private val result: LabDnsUpstreamResult,
+    ) : LabDnsUpstreamTransport {
+        var callCount: Int = 0
+            private set
+        var lastQuery: LabDnsUpstreamQuery? = null
+            private set
+
+        override fun query(query: LabDnsUpstreamQuery): LabDnsUpstreamResult {
+            callCount += 1
+            lastQuery = query
+            return result
         }
     }
 }

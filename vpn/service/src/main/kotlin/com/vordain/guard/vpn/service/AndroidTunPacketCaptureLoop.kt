@@ -47,11 +47,15 @@ class AndroidTunPacketCaptureLoop(
                             break
                         }
                         val result = observer.handlePacket(buffer, bytesRead, clock())
-                        if (result.action == LabPacketAction.WRITE_DNS_BLOCK_RESPONSE) {
+                        if (
+                            result.action == LabPacketAction.WRITE_DNS_BLOCK_RESPONSE ||
+                            result.action == LabPacketAction.WRITE_DNS_UPSTREAM_RESPONSE
+                        ) {
                             val responseBytes = result.responseBytes
                             if (responseBytes != null) {
                                 try {
                                     outputStream.write(responseBytes)
+                                    observer.markDnsResponseWriteSuccess(clock())
                                 } catch (_: IOException) {
                                     observer.markDnsResponseWriteFailure(clock())
                                 }

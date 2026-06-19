@@ -14,6 +14,7 @@ import com.vordain.guard.vpn.engine.DomainTrafficEvaluator
 import com.vordain.guard.vpn.engine.TrafficAction
 import com.vordain.guard.vpn.packet.DnsBlockResponseMode
 import com.vordain.guard.vpn.packet.DnsUdpResponseBuilder
+import com.vordain.guard.vpn.packet.DnsUdpUpstreamResponseWrapper
 import com.vordain.guard.vpn.packet.IpPacketParser
 import com.vordain.guard.vpn.packet.PacketParseResult
 
@@ -21,17 +22,34 @@ class InMemoryLabTrafficObserver(
     private val packetParser: IpPacketParser = IpPacketParser(),
     private val dnsParser: DnsMessageParser = DnsMessageParser(),
     private val dnsResponseBuilder: DnsUdpResponseBuilder = DnsUdpResponseBuilder(),
+    private val dnsUpstreamResponseWrapper: DnsUdpUpstreamResponseWrapper = DnsUdpUpstreamResponseWrapper(),
     private val domainTrafficEvaluator: DomainTrafficEvaluator = defaultDomainTrafficEvaluator(),
-    private val policy: Policy = defaultLabPolicy(),
+    initialPolicy: Policy = defaultLabPolicy(),
     private val recentObservationLimit: Int = DEFAULT_RECENT_OBSERVATION_LIMIT,
     private val dnsBlockResponseMode: DnsBlockResponseMode = DnsBlockResponseMode.NXDOMAIN,
+    initialForwardingMode: LabDnsForwardingMode = LabDnsForwardingMode.DISABLED,
+    initialUpstreamTransport: LabDnsUpstreamTransport = NoConfiguredLabDnsUpstreamTransport,
+    initialUpstreamHost: String = DEFAULT_UPSTREAM_HOST,
+    initialUpstreamPort: Int = DNS_PORT,
 ) : LabTrafficObserver {
     private val lock = Any()
-    private var stats = LabTrafficObservationStats()
+    private var policy: Policy = initialPolicy
+    private var forwardingMode: LabDnsForwardingMode = initialForwardingMode
+    private var upstreamTransport: LabDnsUpstreamTransport = initialUpstreamTransport
+    private var upstreamHost: String = initialUpstreamHost
+    private var upstreamPort: Int = initialUpstreamPort
+    private var stats = LabTrafficObservationStats(
+        dnsUpstreamHost = upstreamHost,
+        dnsUpstreamPort = upstreamPort,
+    )
 
     override fun reset(startedAtMillis: Long) {
         synchronized(lock) {
-            stats = LabTrafficObservationStats(lastPacketSummary = "Lab capture started at $startedAtMillis")
+            stats = LabTrafficObservationStats(
+                dnsUpstreamHost = upstreamHost,
+                dnsUpstreamPort = upstreamPort,
+                lastPacketSummary = "Lab capture started at $startedAtMillis",
+            )
         }
     }
 
@@ -74,7 +92,17 @@ class InMemoryLabTrafficObserver(
         return synchronized(lock) {
             stats = stats.copy(
                 dnsResponseWriteFailureCount = stats.dnsResponseWriteFailureCount + 1,
-                lastPacketSummary = "DNS block response write failed at $observedAtMillis",
+                lastPacketSummary = "DNS response write failed at $observedAtMillis",
+            )
+            stats
+        }
+    }
+
+    override fun markDnsResponseWriteSuccess(observedAtMillis: Long): LabTrafficObservationStats {
+        return synchronized(lock) {
+            stats = stats.copy(
+                dnsResponseWriteSuccessCount = stats.dnsResponseWriteSuccessCount + 1,
+                lastPacketSummary = "DNS response written to TUN at $observedAtMillis",
             )
             stats
         }
@@ -89,6 +117,36 @@ class InMemoryLabTrafficObserver(
 
     override fun snapshot(): LabTrafficObservationStats {
         return synchronized(lock) { stats }
+    }
+
+    fun updatePolicy(policy: Policy) {
+        synchronized(lock) {
+            this.policy = policy
+            stats = stats.copy(lastPacketSummary = "Lab DNS policy updated")
+        }
+    }
+
+    fun useDefaultPolicy() {
+        updatePolicy(defaultLabPolicy())
+    }
+
+    fun configureUpstream(
+        forwardingMode: LabDnsForwardingMode,
+        upstreamTransport: LabDnsUpstreamTransport,
+        upstreamHost: String = DEFAULT_UPSTREAM_HOST,
+        upstreamPort: Int = DNS_PORT,
+    ) {
+        synchronized(lock) {
+            this.forwardingMode = forwardingMode
+            this.upstreamTransport = upstreamTransport
+            this.upstreamHost = upstreamHost
+            this.upstreamPort = upstreamPort
+            stats = stats.copy(
+                dnsUpstreamHost = upstreamHost,
+                dnsUpstreamPort = upstreamPort,
+                lastPacketSummary = "Lab DNS upstream set to $upstreamHost:$upstreamPort",
+            )
+        }
     }
 
     private fun observeDnsIfPresent(
@@ -164,20 +222,82 @@ class InMemoryLabTrafficObserver(
                     } else {
                         drop(stats, "Blocked DNS query dropped; ${response.reason}")
                     }
+                } else if (allowedCount > 0 && forwardingMode == LabDnsForwardingMode.LAB_UPSTREAM) {
+                    forwardAllowedDns(
+                        observedStats = observedStats,
+                        udpDnsPayload = udpPayload.payload,
+                        originalPacket = originalPacket,
+                        originalLength = originalLength,
+                        allowedCount = allowedCount,
+                        alertOnlyCount = alertOnlyCount,
+                    )
                 } else {
                     stats = observedStats.copy(
                         dnsAllowedDroppedCount = observedStats.dnsAllowedDroppedCount + allowedCount,
                         dnsAlertDroppedCount = observedStats.dnsAlertDroppedCount + alertOnlyCount,
                     )
                     val reason = when {
-                        allowedCount > 0 -> "Allowed DNS forwarding not implemented yet; packet dropped"
-                        alertOnlyCount > 0 -> "Alert-only DNS forwarding not implemented yet; packet dropped"
+                        allowedCount > 0 -> "Allowed DNS forwarding disabled in lab mode; packet dropped"
+                        alertOnlyCount > 0 -> "Alert-only DNS is not forwarded in lab mode; packet dropped"
                         else -> "DNS query had no actionable decision; packet dropped"
                     }
                     drop(stats, reason)
                 }
             }
         }
+    }
+
+    private fun forwardAllowedDns(
+        observedStats: LabTrafficObservationStats,
+        udpDnsPayload: ByteArray,
+        originalPacket: ByteArray,
+        originalLength: Int,
+        allowedCount: Int,
+        alertOnlyCount: Int,
+    ): LabPacketHandlingResult {
+        val upstreamResult = upstreamTransport.query(
+            LabDnsUpstreamQuery(
+                dnsPayload = udpDnsPayload.copyOf(),
+                upstreamHost = upstreamHost,
+                upstreamPort = upstreamPort,
+            ),
+        )
+        if (!upstreamResult.success || upstreamResult.responsePayload == null) {
+            stats = observedStats.copy(
+                dnsAllowedForwardFailureCount = observedStats.dnsAllowedForwardFailureCount + allowedCount,
+                dnsAllowedForwardTimeoutCount = observedStats.dnsAllowedForwardTimeoutCount +
+                    if (upstreamResult.reason.contains("timeout", ignoreCase = true)) allowedCount else 0,
+                dnsAlertDroppedCount = observedStats.dnsAlertDroppedCount + alertOnlyCount,
+                lastPacketSummary = "Allowed DNS upstream failed: ${upstreamResult.reason}",
+            )
+            return drop(stats, "Allowed DNS upstream failed; packet dropped: ${upstreamResult.reason}")
+        }
+
+        val response = dnsUpstreamResponseWrapper.buildResponseFromUpstreamPayload(
+            originalPacket = originalPacket,
+            originalLength = originalLength,
+            upstreamDnsPayload = upstreamResult.responsePayload,
+        )
+        if (!response.built || response.responseBytes == null) {
+            stats = observedStats.copy(
+                dnsAllowedForwardFailureCount = observedStats.dnsAllowedForwardFailureCount + allowedCount,
+                dnsAlertDroppedCount = observedStats.dnsAlertDroppedCount + alertOnlyCount,
+                lastPacketSummary = "Allowed DNS upstream response could not be wrapped: ${response.reason}",
+            )
+            return drop(stats, "Allowed DNS upstream response dropped; ${response.reason}")
+        }
+
+        stats = observedStats.copy(
+            dnsAllowedForwardedCount = observedStats.dnsAllowedForwardedCount + allowedCount,
+            dnsAlertDroppedCount = observedStats.dnsAlertDroppedCount + alertOnlyCount,
+            lastPacketSummary = "Allowed DNS upstream response planned for TUN",
+        )
+        return LabPacketHandlingResult(
+            action = LabPacketAction.WRITE_DNS_UPSTREAM_RESPONSE,
+            responseBytes = response.responseBytes,
+            stats = stats,
+            decisionSummary = "Allowed DNS forwarded to lab upstream",
+        )
     }
 
     private fun drop(
@@ -204,6 +324,7 @@ class InMemoryLabTrafficObserver(
 
     companion object {
         const val DNS_PORT = 53
+        const val DEFAULT_UPSTREAM_HOST = "1.1.1.1"
         private const val DEFAULT_RECENT_OBSERVATION_LIMIT = 10
 
         fun defaultLabPolicy(): Policy {
@@ -227,5 +348,11 @@ class InMemoryLabTrafficObserver(
                 policyEngine = DefaultPolicyEngine(),
             )
         }
+    }
+}
+
+object NoConfiguredLabDnsUpstreamTransport : LabDnsUpstreamTransport {
+    override fun query(query: LabDnsUpstreamQuery): LabDnsUpstreamResult {
+        return LabDnsUpstreamResult.failure("Lab upstream transport is not configured")
     }
 }

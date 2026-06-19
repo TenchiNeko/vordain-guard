@@ -211,9 +211,11 @@ class ChildMainActivity : Activity() {
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_DNS_LOCAL_ONLY, textSize = 14f))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_DNS_SINKHOLE, textSize = 14f))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_ALLOWED_DROPPED, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_ALLOWED_NON_DNS_DROPPED, textSize = 14f))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_INTERNET_MAY_NOT_WORK, textSize = 14f))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION, textSize = 14f))
-        layout.addView(button("Start lab capture") {
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_AUTO_STOP, textSize = 14f))
+        layout.addView(button("Start lab capture / DNS enforcement") {
             startLabCaptureWhenAllowed()
         })
         layout.addView(button("Stop lab capture") {
@@ -822,6 +824,7 @@ class ChildMainActivity : Activity() {
             latestAllowDomainsCsv = result.policy.allowedDomains.toCsv()
             latestBlockDomainsCsv = result.policy.blockedDomains.toCsv()
             currentPolicySource = "Verified applied debug policy"
+            LabCaptureDebugStatus.useVerifiedPolicy(result.policy)
         }
         policyHandoffOutputText.text = result.asDisplayText()
         saveCurrentState()
@@ -1035,15 +1038,25 @@ class ChildMainActivity : Activity() {
     }
 
     private fun createLabCaptureDisplay(stats: LabTrafficObservationStats): String {
+        val watchdogLabel = LabCaptureDebugStatus.watchdogLabel()
         val lines = mutableListOf(
             "Lab mode status: $shellStatus",
+            "Lab auto-stop watchdog: $watchdogLabel",
             "Packet count: ${stats.packetCount}",
             "Byte count: ${stats.byteCount}",
+            "Active lab policy source: $currentPolicySource",
+            "Active policy version: $currentPolicyVersion",
+            "Latest allow/block counts: ${latestAllowDomainsCsv.countCsvEntries()}/${latestBlockDomainsCsv.countCsvEntries()}",
+            "Upstream DNS: ${stats.dnsUpstreamHost}:${stats.dnsUpstreamPort}",
             "DNS packet count: ${stats.dnsPacketCount}",
             "DNS query count: ${stats.dnsQueryCount}",
             "DNS blocked response count: ${stats.dnsBlockedResponseCount}",
             "DNS allowed-but-dropped count: ${stats.dnsAllowedDroppedCount}",
+            "DNS allowed forwarded count: ${stats.dnsAllowedForwardedCount}",
+            "DNS allowed forward failures: ${stats.dnsAllowedForwardFailureCount}",
+            "DNS allowed forward timeouts: ${stats.dnsAllowedForwardTimeoutCount}",
             "DNS alert-only dropped count: ${stats.dnsAlertDroppedCount}",
+            "DNS response write successes: ${stats.dnsResponseWriteSuccessCount}",
             "DNS response write failures: ${stats.dnsResponseWriteFailureCount}",
             "Allowed/block/alert counts: ${stats.allowedDomainCount}/${stats.blockedDomainCount}/${stats.alertOnlyDomainCount}",
             "Malformed packet/DNS counts: ${stats.malformedPacketCount}/${stats.malformedDnsCount}",
@@ -1052,8 +1065,10 @@ class ChildMainActivity : Activity() {
             ChildVpnSmokeLabels.LAB_DNS_LOCAL_ONLY,
             ChildVpnSmokeLabels.LAB_DNS_SINKHOLE,
             ChildVpnSmokeLabels.LAB_ALLOWED_DROPPED,
+            ChildVpnSmokeLabels.LAB_ALLOWED_NON_DNS_DROPPED,
             ChildVpnSmokeLabels.LAB_INTERNET_MAY_NOT_WORK,
             ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION,
+            ChildVpnSmokeLabels.LAB_AUTO_STOP,
         )
         if (stats.recentDnsObservations.isNotEmpty()) {
             lines += "Recent DNS observations:"
@@ -1229,9 +1244,13 @@ class ChildMainActivity : Activity() {
                 latestAllowDomainsCsv = restoredPolicy.allowedDomains.toCsv()
                 latestBlockDomainsCsv = restoredPolicy.blockedDomains.toCsv()
                 currentPolicySource = "Verified persisted debug policy"
+                LabCaptureDebugStatus.useVerifiedPolicy(restoredPolicy)
             } else {
                 currentPolicySource = "Persisted policy rejected: ${restored.reason}"
+                LabCaptureDebugStatus.useDefaultPolicy()
             }
+        } else {
+            LabCaptureDebugStatus.useDefaultPolicy()
         }
     }
 
@@ -1500,6 +1519,14 @@ class ChildMainActivity : Activity() {
 
     private fun Set<DomainName>.toCsv(): String {
         return map(DomainName::value).sorted().joinToString(separator = ",")
+    }
+
+    private fun String?.countCsvEntries(): Int {
+        return this
+            ?.split(',')
+            ?.map(String::trim)
+            ?.count(String::isNotBlank)
+            ?: 0
     }
 
     private fun createPairingOutput(): String {
