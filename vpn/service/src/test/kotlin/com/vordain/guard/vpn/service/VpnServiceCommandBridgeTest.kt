@@ -80,6 +80,7 @@ class VpnServiceCommandBridgeTest {
         assertFalse(notificationText.contains("website", ignoreCase = true))
         assertFalse(notificationText.contains("app package", ignoreCase = true))
         assertFalse(notificationText.contains("message", ignoreCase = true))
+        assertTrue(notificationText.contains("shell", ignoreCase = true))
     }
 
     @Test
@@ -105,6 +106,22 @@ class VpnServiceCommandBridgeTest {
     }
 
     @Test
+    fun tunnelOpenerSourceEstablishesVpnInterfaceWithoutDnsOrSockets() {
+        val source = repositoryRoot()
+            .resolve("vpn/service/src/main/kotlin/com/vordain/guard/vpn/service/AndroidVpnTunnelOpener.kt")
+            .readText()
+
+        assertTrue(source.contains("establish()"))
+        assertTrue(source.contains("addAddress"))
+        assertTrue(source.contains("addRoute"))
+        assertDoesNotContain(source, "addDnsServer")
+        assertDoesNotContain(source, "DatagramSocket")
+        assertDoesNotContain(source, "Socket(")
+        assertDoesNotContain(source, "read(")
+        assertDoesNotContain(source, "write(")
+    }
+
+    @Test
     fun vordainVpnServiceSourceDoesNotContainPolicyDnsRelayOrPacketLogic() {
         val source = serviceSource()
 
@@ -120,6 +137,7 @@ class VpnServiceCommandBridgeTest {
         assertDoesNotContain(source, "FileDescriptor")
         assertDoesNotContain(source, "DatagramSocket")
         assertDoesNotContain(source, "Socket(")
+        assertDoesNotContain(source, "addDnsServer")
     }
 
     private class RecordingVpnSessionSink : VpnSessionSink {
@@ -143,6 +161,10 @@ class VpnServiceCommandBridgeTest {
 
         override fun onVpnRevoked() {
             calls += "revoked"
+        }
+
+        override fun onVpnError(message: String?) {
+            calls += "error:$message"
         }
     }
 

@@ -10,8 +10,8 @@ object VpnForegroundNotification {
     const val NOTIFICATION_ID = 42_101
     const val CHANNEL_ID = "vordain_guard_vpn"
     const val CHANNEL_NAME = "Vordain Guard protection"
-    const val TITLE = "Vordain Guard is active"
-    const val BODY = "Protection status is being monitored"
+    const val TITLE = "Vordain Guard VPN shell active"
+    const val BODY = "Protection service is running for setup testing"
 
     fun build(context: Context): Notification {
         ensureChannel(context)

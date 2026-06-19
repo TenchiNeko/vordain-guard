@@ -36,6 +36,10 @@ class ServiceVpnSessionSink(
         transition(VpnSessionCommand.MarkRevoked)
     }
 
+    override fun onVpnError(message: String?) {
+        transition(VpnSessionCommand.MarkError(message))
+    }
+
     private fun transition(command: VpnSessionCommand) {
         val transition = stateReducer.reduce(
             previous = currentSnapshot,

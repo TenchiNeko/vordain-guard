@@ -6,6 +6,7 @@ interface VpnSessionSink {
     fun onVpnStopRequested()
     fun onVpnStopped()
     fun onVpnRevoked()
+    fun onVpnError(message: String?)
 
     companion object {
         val NoOp = object : VpnSessionSink {
@@ -14,6 +15,7 @@ interface VpnSessionSink {
             override fun onVpnStopRequested() = Unit
             override fun onVpnStopped() = Unit
             override fun onVpnRevoked() = Unit
+            override fun onVpnError(message: String?) = Unit
         }
     }
 }

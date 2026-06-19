@@ -3,11 +3,13 @@ package com.vordain.guard.vpn.service
 import android.content.Intent
 import android.net.VpnService
 import android.os.IBinder
+import com.vordain.guard.vpn.session.VpnTunnelSpec
 
 class VordainVpnService : VpnService() {
+    private var tunnelHandle: AndroidVpnTunnelHandle? = null
+
     override fun onCreate() {
         super.onCreate()
-        lifecycleSink.onVpnStarted()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -22,9 +24,12 @@ class VordainVpnService : VpnService() {
                     VpnForegroundNotification.NOTIFICATION_ID,
                     VpnForegroundNotification.build(this),
                 )
+                establishTunnel()
                 START_STICKY
             }
             VpnServiceCommandResult.HandledStop -> {
+                closeTunnel()
+                sessionSink.onVpnStopped()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
                 START_NOT_STICKY
@@ -34,12 +39,14 @@ class VordainVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        closeTunnel()
         sessionSink.onVpnRevoked()
         lifecycleSink.onVpnRevoked()
         super.onRevoke()
     }
 
     override fun onDestroy() {
+        closeTunnel()
         sessionSink.onVpnStopped()
         lifecycleSink.onVpnStopped()
         super.onDestroy()
@@ -55,8 +62,31 @@ class VordainVpnService : VpnService() {
      * core/policy.
      */
 
+    private fun establishTunnel() {
+        when (val result = tunnelOpener.establish(this, VpnTunnelSpec.establishOnlySmokeTest())) {
+            is AndroidVpnTunnelOpenResult.Established -> {
+                tunnelHandle?.close()
+                tunnelHandle = result.handle
+                sessionSink.onVpnStarted()
+                lifecycleSink.onVpnStarted()
+            }
+            is AndroidVpnTunnelOpenResult.PermissionRequired -> {
+                sessionSink.onVpnError(result.message ?: "VPN permission is required")
+            }
+            is AndroidVpnTunnelOpenResult.Failed -> {
+                sessionSink.onVpnError(result.message ?: "VPN shell could not be established")
+            }
+        }
+    }
+
+    private fun closeTunnel() {
+        tunnelHandle?.close()
+        tunnelHandle = null
+    }
+
     companion object {
         var lifecycleSink: VpnLifecycleSink = VpnLifecycleSink.NoOp
         var sessionSink: VpnSessionSink = DefaultServiceVpnSessionSinkFactory.create()
+        var tunnelOpener: AndroidVpnTunnelOpener = AndroidVpnTunnelOpener()
     }
 }

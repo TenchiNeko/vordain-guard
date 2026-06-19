@@ -68,6 +68,19 @@ class ServiceVpnSessionSinkTest {
         VpnSessionSink.NoOp.onVpnStarted()
         VpnSessionSink.NoOp.onVpnStopped()
         VpnSessionSink.NoOp.onVpnRevoked()
+        VpnSessionSink.NoOp.onVpnError("ignored")
+    }
+
+    @Test
+    fun errorCallbackMarksSessionError() {
+        val sink = sink(runningSnapshot(), nowMillis = 12_000L)
+
+        sink.onVpnError("establish failed")
+
+        assertEquals(VpnSessionState.ERROR, sink.currentSnapshot.state)
+        assertEquals(VpnSessionStateReason.PLATFORM_ERROR, sink.currentSnapshot.reason)
+        assertEquals("establish failed", sink.currentSnapshot.message)
+        assertEquals(12_000L, sink.currentSnapshot.updatedAtMillis)
     }
 
     @Test
