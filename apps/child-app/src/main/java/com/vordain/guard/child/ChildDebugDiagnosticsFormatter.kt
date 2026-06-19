@@ -36,6 +36,10 @@ class ChildDebugDiagnosticsFormatter {
         lines += "Bytes: ${state.labCaptureStats.byteCount}"
         lines += "DNS packets: ${state.labCaptureStats.dnsPacketCount}"
         lines += "DNS queries: ${state.labCaptureStats.dnsQueryCount}"
+        lines += "DNS blocked responses: ${state.labCaptureStats.dnsBlockedResponseCount}"
+        lines += "DNS allowed-but-dropped: ${state.labCaptureStats.dnsAllowedDroppedCount}"
+        lines += "DNS alert-only dropped: ${state.labCaptureStats.dnsAlertDroppedCount}"
+        lines += "DNS response write failures: ${state.labCaptureStats.dnsResponseWriteFailureCount}"
         lines += "Allowed/blocked/alert: ${state.labCaptureStats.allowedDomainCount}/" +
             "${state.labCaptureStats.blockedDomainCount}/${state.labCaptureStats.alertOnlyDomainCount}"
         lines += "Malformed packet/DNS: ${state.labCaptureStats.malformedPacketCount}/${state.labCaptureStats.malformedDnsCount}"
@@ -48,6 +52,9 @@ class ChildDebugDiagnosticsFormatter {
         }
         lines += ChildVpnSmokeLabels.LAB_LOCAL_ONLY
         lines += ChildVpnSmokeLabels.LAB_DNS_LOCAL_ONLY
+        lines += ChildVpnSmokeLabels.LAB_DNS_SINKHOLE
+        lines += ChildVpnSmokeLabels.LAB_ALLOWED_DROPPED
+        lines += ChildVpnSmokeLabels.LAB_INTERNET_MAY_NOT_WORK
         lines += ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION
         lines += "Local debug events: ${state.localEvents.size}"
         lines += "Filtering enabled: no"

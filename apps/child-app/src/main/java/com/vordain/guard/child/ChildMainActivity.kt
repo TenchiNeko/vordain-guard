@@ -209,6 +209,9 @@ class ChildMainActivity : Activity() {
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_WARNING, textSize = 14f))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_LOCAL_ONLY, textSize = 14f))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_DNS_LOCAL_ONLY, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_DNS_SINKHOLE, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_ALLOWED_DROPPED, textSize = 14f))
+        layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_INTERNET_MAY_NOT_WORK, textSize = 14f))
         layout.addView(valueLabel(ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION, textSize = 14f))
         layout.addView(button("Start lab capture") {
             startLabCaptureWhenAllowed()
@@ -1038,11 +1041,18 @@ class ChildMainActivity : Activity() {
             "Byte count: ${stats.byteCount}",
             "DNS packet count: ${stats.dnsPacketCount}",
             "DNS query count: ${stats.dnsQueryCount}",
+            "DNS blocked response count: ${stats.dnsBlockedResponseCount}",
+            "DNS allowed-but-dropped count: ${stats.dnsAllowedDroppedCount}",
+            "DNS alert-only dropped count: ${stats.dnsAlertDroppedCount}",
+            "DNS response write failures: ${stats.dnsResponseWriteFailureCount}",
             "Allowed/block/alert counts: ${stats.allowedDomainCount}/${stats.blockedDomainCount}/${stats.alertOnlyDomainCount}",
             "Malformed packet/DNS counts: ${stats.malformedPacketCount}/${stats.malformedDnsCount}",
             "Last packet summary: ${stats.lastPacketSummary ?: "none"}",
             ChildVpnSmokeLabels.LAB_LOCAL_ONLY,
             ChildVpnSmokeLabels.LAB_DNS_LOCAL_ONLY,
+            ChildVpnSmokeLabels.LAB_DNS_SINKHOLE,
+            ChildVpnSmokeLabels.LAB_ALLOWED_DROPPED,
+            ChildVpnSmokeLabels.LAB_INTERNET_MAY_NOT_WORK,
             ChildVpnSmokeLabels.LAB_NOT_FULL_PROTECTION,
         )
         if (stats.recentDnsObservations.isNotEmpty()) {

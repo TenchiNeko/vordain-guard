@@ -1,8 +1,10 @@
 package com.vordain.guard.vpn.service
 
 import android.os.ParcelFileDescriptor
+import com.vordain.guard.vpn.lab.LabPacketAction
 import com.vordain.guard.vpn.lab.LabTrafficObserver
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -38,12 +40,24 @@ class AndroidTunPacketCaptureLoop(
         val buffer = ByteArray(MAX_PACKET_BYTES)
         try {
             FileInputStream(descriptor.fileDescriptor).use { inputStream ->
-                while (running.get()) {
-                    val bytesRead = inputStream.read(buffer)
-                    if (bytesRead < 0) {
-                        break
+                FileOutputStream(descriptor.fileDescriptor).use { outputStream ->
+                    while (running.get()) {
+                        val bytesRead = inputStream.read(buffer)
+                        if (bytesRead < 0) {
+                            break
+                        }
+                        val result = observer.handlePacket(buffer, bytesRead, clock())
+                        if (result.action == LabPacketAction.WRITE_DNS_BLOCK_RESPONSE) {
+                            val responseBytes = result.responseBytes
+                            if (responseBytes != null) {
+                                try {
+                                    outputStream.write(responseBytes)
+                                } catch (_: IOException) {
+                                    observer.markDnsResponseWriteFailure(clock())
+                                }
+                            }
+                        }
                     }
-                    observer.observePacket(buffer, bytesRead, clock())
                 }
             }
         } catch (_: IOException) {

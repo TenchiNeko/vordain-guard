@@ -4,6 +4,7 @@ import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class InMemoryLabTrafficObserverTest {
@@ -113,6 +114,61 @@ class InMemoryLabTrafficObserverTest {
 
         assertFalse(stats.toString().contains("ByteArray"))
         assertFalse(stats.toString().contains(packet.joinToString(",")))
+    }
+
+    @Test
+    fun blockedDnsDomainReturnsWriteDnsBlockResponse() {
+        val observer = InMemoryLabTrafficObserver()
+        val packet = dnsPacketFor("blocked.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.WRITE_DNS_BLOCK_RESPONSE, result.action)
+        assertNotNull(result.responseBytes)
+        assertEquals(1, result.stats.dnsBlockedResponseCount)
+    }
+
+    @Test
+    fun allowedDnsDomainReturnsDropBecauseForwardingIsNotImplemented() {
+        val observer = InMemoryLabTrafficObserver()
+        val packet = dnsPacketFor("allowed.example")
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.DROP, result.action)
+        assertEquals(null, result.responseBytes)
+        assertEquals(1, result.stats.dnsAllowedDroppedCount)
+        assertTrue(result.decisionSummary.orEmpty().contains("forwarding not implemented"))
+    }
+
+    @Test
+    fun nonDnsPacketReturnsDrop() {
+        val observer = InMemoryLabTrafficObserver()
+        val packet = ipv4UdpPacket(payload = byteArrayOf(1, 2, 3), sourcePort = 12_345, destinationPort = 123)
+
+        val result = observer.handlePacket(packet, packet.size, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.DROP, result.action)
+        assertEquals(0, result.stats.dnsPacketCount)
+    }
+
+    @Test
+    fun malformedPacketReturnsDrop() {
+        val observer = InMemoryLabTrafficObserver()
+
+        val result = observer.handlePacket(byteArrayOf(0x45), 1, observedAtMillis = 1_000L)
+
+        assertEquals(LabPacketAction.DROP, result.action)
+        assertEquals(1, result.stats.malformedPacketCount)
+    }
+
+    @Test
+    fun writeFailureCounterCanBeIncrementedByCaptureLoop() {
+        val observer = InMemoryLabTrafficObserver()
+
+        val stats = observer.markDnsResponseWriteFailure(observedAtMillis = 1_000L)
+
+        assertEquals(1, stats.dnsResponseWriteFailureCount)
     }
 
     @Test
