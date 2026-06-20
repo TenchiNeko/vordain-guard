@@ -33,6 +33,7 @@ class VordainVpnService : VpnService() {
         val result = VpnServiceCommandBridge(sessionSink).handleAction(intent?.action)
         return when (result) {
             VpnServiceCommandResult.HandledStart -> {
+                VpnRuntimeDebugStatus.markStarting(VordainOperatingMode.ESTABLISH_ONLY_SHELL)
                 startForeground(
                     VpnForegroundNotification.NOTIFICATION_ID,
                     VpnForegroundNotification.build(this, VpnForegroundNotificationMode.SHELL),
@@ -41,6 +42,7 @@ class VordainVpnService : VpnService() {
                 START_STICKY
             }
             VpnServiceCommandResult.HandledLabStart -> {
+                VpnRuntimeDebugStatus.markStarting(VordainOperatingMode.FULL_TUNNEL_LAB)
                 startForeground(
                     VpnForegroundNotification.NOTIFICATION_ID,
                     VpnForegroundNotification.build(this, VpnForegroundNotificationMode.FULL_TUNNEL_LAB),
@@ -53,6 +55,7 @@ class VordainVpnService : VpnService() {
                 START_STICKY
             }
             VpnServiceCommandResult.HandledDnsOnlyLabStart -> {
+                VpnRuntimeDebugStatus.markStarting(VordainOperatingMode.DNS_ONLY_LAB)
                 startForeground(
                     VpnForegroundNotification.NOTIFICATION_ID,
                     VpnForegroundNotification.build(this, VpnForegroundNotificationMode.DNS_ONLY_LAB),
@@ -65,6 +68,7 @@ class VordainVpnService : VpnService() {
                 START_STICKY
             }
             VpnServiceCommandResult.HandledBasicDnsGuardStart -> {
+                VpnRuntimeDebugStatus.markStarting(VordainOperatingMode.BASIC_DNS_GUARD)
                 startForeground(
                     VpnForegroundNotification.NOTIFICATION_ID,
                     VpnForegroundNotification.build(this, VpnForegroundNotificationMode.BASIC_DNS_GUARD),
@@ -78,6 +82,7 @@ class VordainVpnService : VpnService() {
             }
             VpnServiceCommandResult.HandledStop -> {
                 closeTunnel()
+                VpnRuntimeDebugStatus.markStopped("User requested stop")
                 sessionSink.onVpnStopped()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
@@ -89,6 +94,7 @@ class VordainVpnService : VpnService() {
 
     override fun onRevoke() {
         closeTunnel()
+        VpnRuntimeDebugStatus.markRevoked()
         sessionSink.onVpnRevoked()
         lifecycleSink.onVpnRevoked()
         super.onRevoke()
@@ -96,6 +102,7 @@ class VordainVpnService : VpnService() {
 
     override fun onDestroy() {
         closeTunnel()
+        VpnRuntimeDebugStatus.markStopped("Service destroyed")
         sessionSink.onVpnStopped()
         lifecycleSink.onVpnStopped()
         super.onDestroy()
@@ -158,13 +165,25 @@ class VordainVpnService : VpnService() {
                     stopLabWatchdog("normal shell established")
                     stopBasicDnsHeartbeat("Heartbeat stopped")
                 }
+                VpnRuntimeDebugStatus.markRunning(
+                    mode = when (labCaptureMode) {
+                        ServiceLabCaptureMode.FULL_TUNNEL -> VordainOperatingMode.FULL_TUNNEL_LAB
+                        ServiceLabCaptureMode.DNS_ONLY -> VordainOperatingMode.DNS_ONLY_LAB
+                        ServiceLabCaptureMode.BASIC_DNS_GUARD -> VordainOperatingMode.BASIC_DNS_GUARD
+                        ServiceLabCaptureMode.NONE -> VordainOperatingMode.ESTABLISH_ONLY_SHELL
+                    },
+                    descriptorEstablished = true,
+                    dnsLoopRunning = capturePackets,
+                )
                 sessionSink.onVpnStarted()
                 lifecycleSink.onVpnStarted()
             }
             is AndroidVpnTunnelOpenResult.PermissionRequired -> {
+                VpnRuntimeDebugStatus.markError("VPN_PERMISSION_REQUIRED", result.message ?: "VPN permission is required")
                 sessionSink.onVpnError(result.message ?: "VPN permission is required")
             }
             is AndroidVpnTunnelOpenResult.Failed -> {
+                VpnRuntimeDebugStatus.markError("VPN_ESTABLISH_FAILED", result.message ?: "VPN shell could not be established")
                 sessionSink.onVpnError(result.message ?: "VPN shell could not be established")
             }
         }
@@ -235,10 +254,11 @@ class VordainVpnService : VpnService() {
                 return
             }
         }
-        BasicDnsGuardHeartbeatDebugStatus.start(
+        val started = BasicDnsGuardHeartbeatDebugStatus.start(
             mode = mode,
             currentTimeMillis = System.currentTimeMillis(),
         )
+        VpnRuntimeDebugStatus.updateHeartbeat(started.status, started.lastTickAtMillis)
         if (!basicDnsHeartbeatRunning.compareAndSet(false, true)) {
             return
         }
@@ -250,7 +270,8 @@ class VordainVpnService : VpnService() {
                     return@Thread
                 }
                 if (basicDnsHeartbeatRunning.get()) {
-                    BasicDnsGuardHeartbeatDebugStatus.tick(System.currentTimeMillis())
+                    val ticked = BasicDnsGuardHeartbeatDebugStatus.tick(System.currentTimeMillis())
+                    VpnRuntimeDebugStatus.updateHeartbeat(ticked.status, ticked.lastTickAtMillis)
                 }
             }
         }, "VordainBasicDnsHeartbeat").apply {
@@ -267,7 +288,8 @@ class VordainVpnService : VpnService() {
             }
             basicDnsHeartbeatThread = null
         }
-        BasicDnsGuardHeartbeatDebugStatus.stop(reason)
+        val stopped = BasicDnsGuardHeartbeatDebugStatus.stop(reason)
+        VpnRuntimeDebugStatus.updateHeartbeat(stopped.status, stopped.lastTickAtMillis)
     }
 
     companion object {

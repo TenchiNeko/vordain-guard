@@ -188,9 +188,9 @@ class ParentMainActivity : Activity() {
             setPadding(48, 64, 48, 48)
         }
 
-        layout.addView(centerLabel("Vordain Guard Parent", 28f))
-        layout.addView(centerLabel("Debug policy handoff", 18f))
-        layout.addView(centerLabel("Local debug only - no server delivery.", 16f))
+        layout.addView(centerLabel("Vordain Guard Parent Beta", 28f))
+        layout.addView(centerLabel("0.1.0-beta.1 local beta", 18f))
+        layout.addView(centerLabel("Local dev relay or share-sheet sync. Not full protection.", 16f))
         layout.addView(sectionTitle("Recommended local MVP order"))
         layout.addView(valueLabel(
             listOf(
@@ -356,6 +356,9 @@ class ParentMainActivity : Activity() {
         layout.addView(valueLabel("Manual send/fetch only. Use on a trusted local network.", 14f))
         layout.addView(valueLabel("Local dev relay only. Production sync will use encrypted relay later.", 14f))
         layout.addView(labeledField("Relay base URL", relayBaseUrlInput))
+        layout.addView(button("Test relay connection") {
+            testRelayConnection()
+        })
         layout.addView(button("Send parent sync bundle to relay") {
             sendParentSyncBundleToRelay()
         })
@@ -585,6 +588,7 @@ class ParentMainActivity : Activity() {
             require(targetDeviceId.isNotBlank()) { "Target child device id is required" }
             val policyVersion = policyVersionInput.text.toString().trim()
             require(policyVersion.isNotBlank()) { "Policy version is required" }
+            validatePolicyInputs()
             val issuedAtMillis = System.currentTimeMillis()
             val selectedPolicy = createSelectedPolicy(policyVersion)
             val presetDefinition = policyPresetFactory.describe(selectedPolicyPreset)
@@ -788,6 +792,23 @@ class ParentMainActivity : Activity() {
                         "Message id: ${message.messageId}",
                         "Target child: ${message.targetDeviceId.value}",
                         "Manual send/fetch only.",
+                    ).joinToString(separator = "\n"),
+                )
+            }
+        }
+    }
+
+    private fun testRelayConnection() {
+        updateRelayDiagnostics("Testing local dev relay /health...")
+        runRelayAction {
+            val result = localDevRelayClient.health(relayBaseUrlInput.text.toString())
+            runOnUiThread {
+                updateRelayDiagnostics(
+                    listOf(
+                        "Local dev relay health check",
+                        result.summary,
+                        if (result.success) "Relay reachable" else "Relay needs attention",
+                        "Use trusted local network only.",
                     ).joinToString(separator = "\n"),
                 )
             }
@@ -1167,7 +1188,22 @@ class ParentMainActivity : Activity() {
             },
             latestRelayMessageId = latestRelayMessageId.takeIf(String::isNotBlank),
             latestRelayDiagnostics = latestRelayDiagnostics.takeIf(String::isNotBlank),
+            currentOnboardingStep = currentParentOnboardingStep(),
+            schemaVersion = ParentDebugStateSnapshot.SCHEMA_VERSION,
         )
+    }
+
+    private fun currentParentOnboardingStep(): String {
+        return when {
+            parentDeviceInput.text.toString().isBlank() -> "IDENTIFY_PARENT_DEVICE"
+            targetDeviceInput.text.toString().isBlank() -> "IDENTIFY_CHILD_DEVICE"
+            relayBaseUrlInput.text.toString().isBlank() -> "CONFIGURE_SYNC"
+            lastPayload.isBlank() -> "BUILD_INITIAL_POLICY"
+            lastParentSyncBundlePayload.isBlank() -> "EXPORT_POLICY_BUNDLE"
+            lastChildSyncBundlePayload.isBlank() -> "IMPORT_CHILD_STATUS"
+            decodedChildAlertReport == null -> "REVIEW_ALERTS"
+            else -> "READY_FOR_TESTING"
+        }
     }
 
     private fun decodeHardeningSetupReport() {
@@ -1640,11 +1676,13 @@ class ParentMainActivity : Activity() {
 
     private fun createPolicySummary(): String {
         val selectedPolicy = createSelectedPolicy(policyVersionInput.text.toString().ifBlank { "debug-preview" })
+        val conflictCount = selectedPolicy.allowedDomains.intersect(selectedPolicy.blockedDomains).size
         return listOf(
             "Policy summary",
             "Preset: ${policyPresetFactory.describe(selectedPolicyPreset).displayName}",
             "Allow count: ${selectedPolicy.allowedDomains.size}",
             "Block count: ${selectedPolicy.blockedDomains.size}",
+            "Allow/block conflicts: $conflictCount${if (conflictCount > 0) " - blocked domains win" else ""}",
             "Encrypted-DNS blocking enabled: ${blockEncryptedDnsInput.isChecked}",
             "Proxy blocking enabled: ${selectedPolicy.blockKnownProxyDomains}",
             "Unknown-domain behavior: ${if (selectedPolicy.blockUnknownDomains) "blocked" else "allowed unless listed"}",
@@ -1685,6 +1723,15 @@ class ParentMainActivity : Activity() {
             blockUnknownDomains = blockUnknownInput.isChecked,
             blockKnownProxyDomains = blockKnownProxyInput.isChecked,
         )
+    }
+
+    private fun validatePolicyInputs() {
+        val allowed = allowDomainsInput.text.toString().toDomainSet()
+        val blocked = blockDomainsInput.text.toString().toDomainSet()
+        val conflicts = allowed.intersect(blocked)
+        require(conflicts.isEmpty()) {
+            "Domain appears in both allow and block lists: ${conflicts.first().value}. Remove the duplicate before building."
+        }
     }
 
     private fun String.toDomainSet(): Set<DomainName> {

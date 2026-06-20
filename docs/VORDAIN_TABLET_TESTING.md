@@ -10,6 +10,12 @@ Run:
 tools/export_debug_apks.sh
 ```
 
+For the v0.1 beta-named APKs, run:
+
+```bash
+tools/export_beta_apks.sh
+```
+
 The script builds debug APKs, copies them to `~/tablet-download`, writes `SHA256SUMS`, and prints a local server command:
 
 ```bash
@@ -348,4 +354,4 @@ This build is not full protection:
 
 ## Third-Party Notices
 
-No root `LICENSE` file is added by these local MVP steps. `THIRD_PARTY_NOTICES.md` is a non-exhaustive placeholder for development tooling and dependency notices, including Gradle wrapper/build tooling under Apache 2.0.
+No root `LICENSE` file is added by these local MVP steps. `THIRD_PARTY_NOTICES.md` is a non-exhaustive record for development tooling and dependency notices, including Gradle wrapper/build tooling under Apache 2.0.

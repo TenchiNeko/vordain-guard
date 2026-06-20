@@ -3,7 +3,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Vordain Guard Parent"
+        android:label="Vordain Guard Parent Beta"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true">
         <activity

@@ -27,6 +27,8 @@ data class ParentDebugStateSnapshot(
     val relayBaseUrl: String = DEFAULT_RELAY_BASE_URL,
     val latestRelayMessageId: String? = null,
     val latestRelayDiagnostics: String? = null,
+    val currentOnboardingStep: String = DEFAULT_ONBOARDING_STEP,
+    val schemaVersion: Int = SCHEMA_VERSION,
 ) {
     companion object {
         const val DEFAULT_TARGET_CHILD_DEVICE_ID = "child-debug-device"
@@ -40,5 +42,7 @@ data class ParentDebugStateSnapshot(
         const val DEFAULT_PARENT_FINGERPRINT = "debug-parent-fingerprint"
         const val DEFAULT_VERIFICATION_CODE = "123456"
         const val DEFAULT_RELAY_BASE_URL = "http://192.168.68.81:8081"
+        const val DEFAULT_ONBOARDING_STEP = "IDENTIFY_PARENT_DEVICE"
+        const val SCHEMA_VERSION = 1
     }
 }

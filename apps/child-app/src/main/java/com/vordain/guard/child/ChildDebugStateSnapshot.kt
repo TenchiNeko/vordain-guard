@@ -34,6 +34,11 @@ data class ChildDebugStateSnapshot(
     val parentRelayDeviceId: String = DEFAULT_PARENT_RELAY_DEVICE_ID,
     val latestRelayMessageId: String? = null,
     val latestRelayDiagnostics: String? = null,
+    val expectedBasicDnsGuardRunning: Boolean = false,
+    val latestVpnRuntimeStatus: String = DEFAULT_RUNTIME_STATUS,
+    val latestHeartbeatStatus: String = DEFAULT_HEARTBEAT_STATUS,
+    val currentOnboardingStep: String = DEFAULT_ONBOARDING_STEP,
+    val schemaVersion: Int = SCHEMA_VERSION,
 ) {
     companion object {
         const val DEFAULT_CHILD_DEVICE_ID = "child-debug-device"
@@ -41,5 +46,9 @@ data class ChildDebugStateSnapshot(
         const val DEFAULT_CHILD_FINGERPRINT = "debug-child-fingerprint"
         const val DEFAULT_RELAY_BASE_URL = "http://192.168.68.81:8081"
         const val DEFAULT_PARENT_RELAY_DEVICE_ID = "parent-debug-device"
+        const val DEFAULT_RUNTIME_STATUS = "Unknown"
+        const val DEFAULT_HEARTBEAT_STATUS = "Heartbeat missing"
+        const val DEFAULT_ONBOARDING_STEP = "CONFIRM_CHILD_DEVICE"
+        const val SCHEMA_VERSION = 1
     }
 }

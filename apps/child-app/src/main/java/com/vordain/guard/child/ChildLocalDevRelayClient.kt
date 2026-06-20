@@ -16,6 +16,18 @@ data class ChildDevRelayClientResult(
 class ChildLocalDevRelayClient(
     private val codec: DevRelayMessageCodec = DevRelayMessageCodec(),
 ) {
+    fun health(baseUrl: String): ChildDevRelayClientResult {
+        val response = request(
+            method = "GET",
+            url = "${baseUrl.trimEnd('/')}/health",
+            body = null,
+        )
+        return ChildDevRelayClientResult(
+            success = response.code in 200..299 && response.body.trim() == "OK",
+            summary = "health ${response.code}: ${response.body.ifBlank { "empty response" }}",
+        )
+    }
+
     fun sendMessage(
         baseUrl: String,
         message: DevRelayMessage,

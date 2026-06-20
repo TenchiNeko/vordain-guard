@@ -1,5 +1,6 @@
 package com.vordain.guard.child
 
+import android.Manifest
 import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,6 +8,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -103,9 +105,12 @@ import com.vordain.guard.vpn.lab.LabTrafficObservationStats
 import com.vordain.guard.vpn.service.BasicDnsGuardHeartbeatDebugStatus
 import com.vordain.guard.vpn.service.LabCaptureDebugStatus
 import com.vordain.guard.vpn.service.VordainVpnServiceIntents
+import com.vordain.guard.vpn.service.VpnRuntimeDebugStatus
 import com.vordain.guard.vpn.service.VpnPermissionIntentFactory
 import com.vordain.guard.vpn.service.VpnPrepareResult
 import com.vordain.guard.vpn.session.BasicDnsGuardHeartbeatStatus
+import com.vordain.guard.vpn.session.VordainOperatingMode
+import com.vordain.guard.vpn.session.VpnRuntimeSessionState
 
 class ChildMainActivity : Activity() {
     private val vpnPermissionIntentFactory = VpnPermissionIntentFactory()
@@ -211,6 +216,9 @@ class ChildMainActivity : Activity() {
     private var parentRelayDeviceId: String = ChildDebugStateSnapshot.DEFAULT_PARENT_RELAY_DEVICE_ID
     private var latestRelayMessageId: String = ""
     private var latestRelayDiagnostics: String = "No local dev relay action yet."
+    private var expectedBasicDnsGuardRunning: Boolean = false
+    private var latestVpnRuntimeStatus: String = ChildDebugStateSnapshot.DEFAULT_RUNTIME_STATUS
+    private var latestHeartbeatStatus: String = ChildDebugStateSnapshot.DEFAULT_HEARTBEAT_STATUS
     private var bypassRiskItems: List<BypassRiskItem> = emptyList()
     private var lastDiagnosticsText: String? = null
     private var policyResult: ChildDebugPolicyResult? = null
@@ -809,6 +817,9 @@ class ChildMainActivity : Activity() {
         parentRelayDeviceInput = editText(parentRelayDeviceId)
         layout.addView(labeledField("Relay base URL", relayBaseUrlInput))
         layout.addView(labeledField("Parent device id", parentRelayDeviceInput))
+        layout.addView(button("Test relay connection") {
+            testRelayConnection()
+        })
         layout.addView(button("Fetch parent bundles from relay") {
             fetchParentBundlesFromRelay()
         })
@@ -1122,6 +1133,7 @@ class ChildMainActivity : Activity() {
                 setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_GRANTED)
                 setLastCommand(ChildVpnSmokeLabels.COMMAND_BASIC_DNS_START_SENT)
                 setShellStatus(ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING)
+                expectedBasicDnsGuardRunning = true
                 val intent = VordainVpnServiceIntents.startBasicDnsGuard(this)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     startForegroundService(intent)
@@ -1142,6 +1154,8 @@ class ChildMainActivity : Activity() {
                     sourceLabel = "Child app",
                 )
                 setStatus(ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE)
+                saveCurrentState()
+                refreshDiagnosticsViews()
             }
             is VpnPrepareResult.ConsentRequired -> {
                 setVpnPermissionStatus(ChildVpnSmokeLabels.PERMISSION_REQUIRED)
@@ -1153,6 +1167,8 @@ class ChildMainActivity : Activity() {
                     detail = "VPN permission is required before Basic DNS Guard can start.",
                 )
                 setStatus(ChildVpnSmokeLabels.STATUS_PERMISSION_REQUIRED)
+                expectedBasicDnsGuardRunning = false
+                saveCurrentState()
                 startActivityForResult(result.intent, REQUEST_VPN_PERMISSION)
             }
         }
@@ -1161,6 +1177,7 @@ class ChildMainActivity : Activity() {
     private fun stopBasicDnsGuard() {
         setLastCommand(ChildVpnSmokeLabels.COMMAND_BASIC_DNS_STOP_SENT)
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOP_COMMAND_SENT)
+        expectedBasicDnsGuardRunning = false
         startService(VordainVpnServiceIntents.stopBasicDnsGuard(this))
         recordAudit(
             type = AuditEntryType.BASIC_DNS_GUARD_STOPPED,
@@ -1184,6 +1201,8 @@ class ChildMainActivity : Activity() {
         )
         setStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
         setShellStatus(ChildVpnSmokeLabels.STATUS_STOPPED)
+        saveCurrentState()
+        refreshDiagnosticsViews()
     }
 
     private fun openSettings(action: String) {
@@ -1869,6 +1888,11 @@ class ChildMainActivity : Activity() {
     }
 
     private fun showLocalAlertNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         ensureLocalAlertNotificationChannel()
         val notification = android.app.Notification.Builder(this, LOCAL_ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
@@ -2033,6 +2057,23 @@ class ChildMainActivity : Activity() {
                         "Skipped wrong direction: $skippedCount",
                         "Latest message id: ${latestRelayMessageId.ifBlank { "none" }}",
                         "Policy payloads are verified before use.",
+                    ).joinToString(separator = "\n"),
+                )
+            }
+        }
+    }
+
+    private fun testRelayConnection() {
+        updateRelayDiagnostics("Testing local dev relay /health...")
+        runRelayAction {
+            val result = localDevRelayClient.health(relayBaseUrlInput.text.toString())
+            runOnUiThread {
+                updateRelayDiagnostics(
+                    listOf(
+                        "Local dev relay health check",
+                        result.summary,
+                        if (result.success) "Relay reachable" else "Relay needs attention",
+                        "Use trusted local network only.",
                     ).joinToString(separator = "\n"),
                 )
             }
@@ -2553,9 +2594,15 @@ class ChildMainActivity : Activity() {
         val hardening = currentHardeningSetupSnapshot()
         val bypassSummary = currentBypassRiskSummary()
         val heartbeatSnapshot = BasicDnsGuardHeartbeatDebugStatus.snapshot()
+        val runtimeSnapshot = VpnRuntimeDebugStatus.snapshot()
         return listOf(
             "Overall local MVP status: ${report.overallStatus.toDisplayLabel()}",
             "Basic DNS Guard mode: ${basicDnsGuardModeLabel()}",
+            "Runtime state: ${runtimeSnapshot.statusLabel}",
+            "Runtime updated: ${runtimeSnapshot.updatedAtMillis}",
+            "Descriptor established: ${runtimeSnapshot.descriptorEstablished}",
+            "DNS loop running: ${runtimeSnapshot.dnsLoopRunning}",
+            "Restart/state check: ${runtimeMismatchLabel(runtimeSnapshot.sessionState)}",
             "Heartbeat: ${heartbeatSnapshot.statusLabel}",
             "Active critical alerts: ${childAlertReducer.activeCriticalCount(childAlertTimeline)}",
             "Readiness: ${readiness.status.toBasicDnsDisplayLabel()} - ${readiness.reason}",
@@ -2579,12 +2626,34 @@ class ChildMainActivity : Activity() {
     }
 
     private fun basicDnsGuardModeLabel(): String {
+        val runtime = VpnRuntimeDebugStatus.snapshot()
+        if (runtime.operatingMode == VordainOperatingMode.BASIC_DNS_GUARD) {
+            return when (runtime.sessionState) {
+                VpnRuntimeSessionState.STARTING -> "Starting"
+                VpnRuntimeSessionState.ESTABLISHED,
+                VpnRuntimeSessionState.RUNNING -> "Running"
+                VpnRuntimeSessionState.STOPPED -> "Stopped"
+                VpnRuntimeSessionState.REVOKED,
+                VpnRuntimeSessionState.ERROR -> "Needs attention"
+                VpnRuntimeSessionState.STALE,
+                VpnRuntimeSessionState.UNKNOWN -> "Unknown"
+                VpnRuntimeSessionState.IDLE -> "Idle"
+            }
+        }
         return when (shellStatus) {
             ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE -> "Running"
             ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING -> "Starting"
             ChildVpnSmokeLabels.STATUS_STOPPED -> "Stopped"
             ChildVpnSmokeLabels.STATUS_PERMISSION_REQUIRED -> "Needs attention"
             else -> "Idle"
+        }
+    }
+
+    private fun runtimeMismatchLabel(state: VpnRuntimeSessionState): String {
+        return if (expectedBasicDnsGuardRunning && state != VpnRuntimeSessionState.RUNNING) {
+            "Needs attention - app expected Basic DNS Guard but runtime is ${state.name}"
+        } else {
+            "Confirmed from local runtime snapshot"
         }
     }
 
@@ -2606,6 +2675,7 @@ class ChildMainActivity : Activity() {
         val stats = LabCaptureDebugStatus.snapshot()
         val readiness = currentDnsOnlyReadinessResult()
         val heartbeatSnapshot = BasicDnsGuardHeartbeatDebugStatus.snapshot()
+        val runtimeSnapshot = VpnRuntimeDebugStatus.snapshot()
         return BasicDnsGuardDiagnosticsReport(
             childDeviceId = DeviceId(childDeviceId),
             generatedAtMillis = System.currentTimeMillis(),
@@ -2815,18 +2885,21 @@ class ChildMainActivity : Activity() {
         val labStats = LabCaptureDebugStatus.snapshot()
         val heartbeatSnapshot = BasicDnsGuardHeartbeatDebugStatus.snapshot()
         val heartbeatFresh = heartbeatSnapshot.status == BasicDnsGuardHeartbeatStatus.FRESH
+        val runtimeSnapshot = VpnRuntimeDebugStatus.snapshot()
         val activeMode = if (
+            runtimeSnapshot.operatingMode == VordainOperatingMode.BASIC_DNS_GUARD ||
             shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE ||
             shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING
         ) {
             ChildSecurityActiveMode.BASIC_DNS_GUARD
         } else if (
+            runtimeSnapshot.operatingMode == VordainOperatingMode.DNS_ONLY_LAB ||
             shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_ACTIVE ||
             shellStatus == ChildVpnSmokeLabels.STATUS_DNS_ONLY_LAB_STARTING ||
             labStats.activeModeLabel == "DNS-only lab"
         ) {
             ChildSecurityActiveMode.DNS_ONLY_LAB
-        } else if (labCaptureActive) {
+        } else if (runtimeSnapshot.operatingMode == VordainOperatingMode.FULL_TUNNEL_LAB || labCaptureActive) {
             ChildSecurityActiveMode.FULL_TUNNEL_LAB
         } else {
             ChildSecurityActiveMode.NONE
@@ -2851,9 +2924,12 @@ class ChildMainActivity : Activity() {
                 proxyBlockingEnabled = policyDemo.blockKnownProxyDomains(),
                 policyAllowDomainCount = policyDemo.allowDomainCount(),
                 policyBlockDomainCount = policyDemo.blockDomainCount(),
-                vpnSessionLabel = shellStatus,
-                vpnSessionRunning = shellStatus == ChildVpnSmokeLabels.STATUS_SHELL_ACTIVE || labCaptureActive,
-                vpnStopped = shellStatus == ChildVpnSmokeLabels.STATUS_STOPPED ||
+                vpnSessionLabel = "${runtimeSnapshot.statusLabel} / $shellStatus",
+                vpnSessionRunning = runtimeSnapshot.sessionState == VpnRuntimeSessionState.RUNNING ||
+                    shellStatus == ChildVpnSmokeLabels.STATUS_SHELL_ACTIVE || labCaptureActive,
+                vpnStopped = runtimeSnapshot.sessionState == VpnRuntimeSessionState.STOPPED ||
+                    runtimeSnapshot.sessionState == VpnRuntimeSessionState.REVOKED ||
+                    shellStatus == ChildVpnSmokeLabels.STATUS_STOPPED ||
                     shellStatus == ChildVpnSmokeLabels.STATUS_REVOKED_UNKNOWN,
                 heartbeatLabel = heartbeatSnapshot.statusLabel,
                 heartbeatFresh = heartbeatFresh,
@@ -3126,6 +3202,9 @@ class ChildMainActivity : Activity() {
         parentRelayDeviceId = snapshot.parentRelayDeviceId
         latestRelayMessageId = snapshot.latestRelayMessageId.orEmpty()
         latestRelayDiagnostics = snapshot.latestRelayDiagnostics ?: latestRelayDiagnostics
+        expectedBasicDnsGuardRunning = snapshot.expectedBasicDnsGuardRunning
+        latestVpnRuntimeStatus = snapshot.latestVpnRuntimeStatus
+        latestHeartbeatStatus = snapshot.latestHeartbeatStatus
         bypassRiskItems = restoreBypassRiskItems(snapshot.latestBypassRiskReportPayload)
         hardeningSetupSnapshot = restoreHardeningSetupSnapshot(snapshot.latestHardeningSetupReportPayload)
         latestChildSecurityStatusReport = restoreChildSecurityStatusReport(snapshot.latestChildSecurityStatusReportPayload)
@@ -3211,8 +3290,26 @@ class ChildMainActivity : Activity() {
                 },
                 latestRelayMessageId = latestRelayMessageId.takeIf(String::isNotBlank),
                 latestRelayDiagnostics = latestRelayDiagnostics.takeIf(String::isNotBlank),
+                expectedBasicDnsGuardRunning = expectedBasicDnsGuardRunning,
+                latestVpnRuntimeStatus = VpnRuntimeDebugStatus.snapshot().statusLabel,
+                latestHeartbeatStatus = BasicDnsGuardHeartbeatDebugStatus.snapshot().statusLabel,
+                currentOnboardingStep = currentChildOnboardingStep(),
+                schemaVersion = ChildDebugStateSnapshot.SCHEMA_VERSION,
             ),
         )
+    }
+
+    private fun currentChildOnboardingStep(): String {
+        return when {
+            childDeviceId.isBlank() -> "CONFIRM_CHILD_DEVICE"
+            currentPolicySource != "Verified debug policy" -> "IMPORT_PARENT_POLICY"
+            vpnPermissionStatus != ChildVpnSmokeLabels.PERMISSION_GRANTED -> "REQUEST_VPN_PERMISSION"
+            hardeningSetupSnapshot == null -> "COMPLETE_HARDENING"
+            currentDnsOnlyReadinessResult().status.name.contains("READY").not() -> "REVIEW_DNS_LIMITS"
+            VpnRuntimeDebugStatus.snapshot().operatingMode != VordainOperatingMode.BASIC_DNS_GUARD -> "START_BASIC_DNS_GUARD"
+            latestChildSyncBundlePayload.isNullOrBlank() -> "EXPORT_CHILD_STATUS"
+            else -> "READY_FOR_TESTING"
+        }
     }
 
     private fun currentHardeningSetupSnapshot(): HardeningSetupSnapshot {

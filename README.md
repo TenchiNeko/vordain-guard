@@ -4,7 +4,7 @@ Vordain Guard is an Android-first phone safety system from Vordain Labs LLC for 
 
 ## Local MVP Status
 
-The current Android build exposes a local/debug Basic DNS Guard MVP. Basic DNS Guard uses DNS-only enforcement, blocks normal DNS-based access for blocked domains, forwards allowed DNS through the lab upstream path, and does not inspect or forward non-DNS traffic. It is not full protection, filtering is not production-enabled yet, and backend/relay production sync is not enabled.
+The current Android build exposes Vordain Guard Beta, a local/debug Basic DNS Guard MVP. Basic DNS Guard uses DNS-only enforcement, blocks normal DNS-based access for blocked domains, forwards allowed DNS through the lab upstream path, and does not inspect or forward non-DNS traffic. It is not full protection, filtering is not production-enabled yet, and backend/relay production sync is not enabled.
 
 The first product promise for Vordain Guard Basic is:
 
@@ -19,6 +19,13 @@ The local MVP now uses debug/local sync bundles for the parent-child loop. The p
 Android share-sheet import is supported for these local sync bundles. Copy/paste remains available as a fallback, and each app keeps a local bundle inbox summary so accepted, rejected, and wrong-direction imports are visible during tablet testing.
 
 A local dev relay is also available for manual send/fetch on a trusted LAN. It uses an in-memory JVM server and Android `HttpURLConnection` clients to exchange the same debug sync bundles. It is local/debug only, has no production encryption or authentication, and production sync will use encrypted relay later.
+
+Beta testing references:
+
+* `docs/BETA_TEST_PLAN.md`
+* `docs/BETA_RELEASE_CHECKLIST.md`
+* `docs/KNOWN_LIMITATIONS.md`
+* `docs/PRIVACY_DISCLOSURE_DRAFT.md`
 
 The product loop is:
 

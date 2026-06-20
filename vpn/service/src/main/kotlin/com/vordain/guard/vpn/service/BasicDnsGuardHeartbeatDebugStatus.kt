@@ -13,19 +13,22 @@ object BasicDnsGuardHeartbeatDebugStatus {
     fun start(
         mode: VordainOperatingMode,
         currentTimeMillis: Long,
-    ) {
+    ): BasicDnsGuardHeartbeatSnapshot {
         snapshot = heartbeat.start(
             mode = mode,
             currentTimeMillis = currentTimeMillis,
         )
+        return snapshot
     }
 
-    fun tick(currentTimeMillis: Long) {
+    fun tick(currentTimeMillis: Long): BasicDnsGuardHeartbeatSnapshot {
         snapshot = heartbeat.tick(snapshot, currentTimeMillis)
+        return snapshot
     }
 
-    fun stop(reason: String) {
+    fun stop(reason: String): BasicDnsGuardHeartbeatSnapshot {
         snapshot = heartbeat.stop(snapshot, reason)
+        return snapshot
     }
 
     fun snapshot(currentTimeMillis: Long = System.currentTimeMillis()): BasicDnsGuardHeartbeatSnapshot {

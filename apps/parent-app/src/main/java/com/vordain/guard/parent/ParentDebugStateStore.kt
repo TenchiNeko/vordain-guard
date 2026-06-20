@@ -47,6 +47,9 @@ class ParentDebugStateStore(context: Context) {
                 ?: ParentDebugStateSnapshot.DEFAULT_RELAY_BASE_URL,
             latestRelayMessageId = preferences.getString(KEY_LATEST_RELAY_MESSAGE_ID, null),
             latestRelayDiagnostics = preferences.getString(KEY_LATEST_RELAY_DIAGNOSTICS, null),
+            currentOnboardingStep = preferences.getString(KEY_CURRENT_ONBOARDING_STEP, null)
+                ?: ParentDebugStateSnapshot.DEFAULT_ONBOARDING_STEP,
+            schemaVersion = preferences.getInt(KEY_SCHEMA_VERSION, ParentDebugStateSnapshot.SCHEMA_VERSION),
         )
     }
 
@@ -81,6 +84,8 @@ class ParentDebugStateStore(context: Context) {
             .putString(KEY_RELAY_BASE_URL, snapshot.relayBaseUrl)
             .putString(KEY_LATEST_RELAY_MESSAGE_ID, snapshot.latestRelayMessageId)
             .putString(KEY_LATEST_RELAY_DIAGNOSTICS, snapshot.latestRelayDiagnostics)
+            .putString(KEY_CURRENT_ONBOARDING_STEP, snapshot.currentOnboardingStep)
+            .putInt(KEY_SCHEMA_VERSION, ParentDebugStateSnapshot.SCHEMA_VERSION)
             .apply()
     }
 
@@ -112,6 +117,8 @@ class ParentDebugStateStore(context: Context) {
         const val KEY_RELAY_BASE_URL = "relay_base_url"
         const val KEY_LATEST_RELAY_MESSAGE_ID = "latest_relay_message_id"
         const val KEY_LATEST_RELAY_DIAGNOSTICS = "latest_relay_diagnostics"
+        const val KEY_CURRENT_ONBOARDING_STEP = "current_onboarding_step"
+        const val KEY_SCHEMA_VERSION = "schema_version"
 
         val persistedKeys = setOf(
             KEY_TARGET_CHILD_DEVICE_ID,
@@ -140,6 +147,8 @@ class ParentDebugStateStore(context: Context) {
             KEY_RELAY_BASE_URL,
             KEY_LATEST_RELAY_MESSAGE_ID,
             KEY_LATEST_RELAY_DIAGNOSTICS,
+            KEY_CURRENT_ONBOARDING_STEP,
+            KEY_SCHEMA_VERSION,
         )
     }
 }

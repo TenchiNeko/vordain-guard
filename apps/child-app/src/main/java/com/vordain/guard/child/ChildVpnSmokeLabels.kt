@@ -1,9 +1,9 @@
 package com.vordain.guard.child
 
 object ChildVpnSmokeLabels {
-    const val TITLE = "Vordain Guard"
-    const val BUILD_LABEL = "Debug smoke test"
-    const val SUBTITLE = "VPN shell smoke test"
+    const val TITLE = "Vordain Guard Child Beta"
+    const val BUILD_LABEL = "0.1.0-beta.1 local beta"
+    const val SUBTITLE = "Basic DNS Guard local beta"
     const val VPN_PERMISSION_PREFIX = "VPN permission"
     const val LAST_COMMAND_PREFIX = "Last command"
     const val SHELL_STATUS_PREFIX = "Shell status"

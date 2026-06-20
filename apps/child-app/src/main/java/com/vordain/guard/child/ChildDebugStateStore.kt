@@ -60,6 +60,14 @@ class ChildDebugStateStore(context: Context) {
                 ?: ChildDebugStateSnapshot.DEFAULT_PARENT_RELAY_DEVICE_ID,
             latestRelayMessageId = preferences.getString(KEY_LATEST_RELAY_MESSAGE_ID, null),
             latestRelayDiagnostics = preferences.getString(KEY_LATEST_RELAY_DIAGNOSTICS, null),
+            expectedBasicDnsGuardRunning = preferences.getBoolean(KEY_EXPECTED_BASIC_DNS_GUARD_RUNNING, false),
+            latestVpnRuntimeStatus = preferences.getString(KEY_LATEST_VPN_RUNTIME_STATUS, null)
+                ?: ChildDebugStateSnapshot.DEFAULT_RUNTIME_STATUS,
+            latestHeartbeatStatus = preferences.getString(KEY_LATEST_HEARTBEAT_STATUS, null)
+                ?: ChildDebugStateSnapshot.DEFAULT_HEARTBEAT_STATUS,
+            currentOnboardingStep = preferences.getString(KEY_CURRENT_ONBOARDING_STEP, null)
+                ?: ChildDebugStateSnapshot.DEFAULT_ONBOARDING_STEP,
+            schemaVersion = preferences.getInt(KEY_SCHEMA_VERSION, ChildDebugStateSnapshot.SCHEMA_VERSION),
         )
     }
 
@@ -104,6 +112,11 @@ class ChildDebugStateStore(context: Context) {
             .putString(KEY_PARENT_RELAY_DEVICE_ID, snapshot.parentRelayDeviceId)
             .putString(KEY_LATEST_RELAY_MESSAGE_ID, snapshot.latestRelayMessageId)
             .putString(KEY_LATEST_RELAY_DIAGNOSTICS, snapshot.latestRelayDiagnostics)
+            .putBoolean(KEY_EXPECTED_BASIC_DNS_GUARD_RUNNING, snapshot.expectedBasicDnsGuardRunning)
+            .putString(KEY_LATEST_VPN_RUNTIME_STATUS, snapshot.latestVpnRuntimeStatus)
+            .putString(KEY_LATEST_HEARTBEAT_STATUS, snapshot.latestHeartbeatStatus)
+            .putString(KEY_CURRENT_ONBOARDING_STEP, snapshot.currentOnboardingStep)
+            .putInt(KEY_SCHEMA_VERSION, ChildDebugStateSnapshot.SCHEMA_VERSION)
             .apply()
     }
 
@@ -142,6 +155,11 @@ class ChildDebugStateStore(context: Context) {
         const val KEY_PARENT_RELAY_DEVICE_ID = "parent_relay_device_id"
         const val KEY_LATEST_RELAY_MESSAGE_ID = "latest_relay_message_id"
         const val KEY_LATEST_RELAY_DIAGNOSTICS = "latest_relay_diagnostics"
+        const val KEY_EXPECTED_BASIC_DNS_GUARD_RUNNING = "expected_basic_dns_guard_running"
+        const val KEY_LATEST_VPN_RUNTIME_STATUS = "latest_vpn_runtime_status"
+        const val KEY_LATEST_HEARTBEAT_STATUS = "latest_heartbeat_status"
+        const val KEY_CURRENT_ONBOARDING_STEP = "current_onboarding_step"
+        const val KEY_SCHEMA_VERSION = "schema_version"
 
         val persistedKeys = setOf(
             KEY_CHILD_DEVICE_ID,
@@ -177,6 +195,11 @@ class ChildDebugStateStore(context: Context) {
             KEY_PARENT_RELAY_DEVICE_ID,
             KEY_LATEST_RELAY_MESSAGE_ID,
             KEY_LATEST_RELAY_DIAGNOSTICS,
+            KEY_EXPECTED_BASIC_DNS_GUARD_RUNNING,
+            KEY_LATEST_VPN_RUNTIME_STATUS,
+            KEY_LATEST_HEARTBEAT_STATUS,
+            KEY_CURRENT_ONBOARDING_STEP,
+            KEY_SCHEMA_VERSION,
         )
     }
 }
