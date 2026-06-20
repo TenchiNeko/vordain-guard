@@ -12,6 +12,8 @@ import kotlin.test.assertTrue
 
 class SyncBundleCodecTest {
     private val codec = SyncBundleCodec()
+    private val importEvaluator = SyncBundleImportEvaluator()
+    private val acceptanceChecklist = MvpAcceptanceChecklist()
 
     @Test
     fun childToParentBundleRoundTrips() {
@@ -138,6 +140,99 @@ class SyncBundleCodecTest {
         assertTrue(decoded.accepted)
         assertEquals(text, decoded.bundle?.payloads?.single()?.payloadText)
         assertNotNull(decoded.bundle?.payloads?.single()?.label)
+    }
+
+    @Test
+    fun parentAcceptsChildToParentBundle() {
+        val result = importEvaluator.evaluateForParent(childBundle())
+
+        assertEquals(SyncBundleImportStatus.ACCEPTED, result.status)
+        assertEquals(SyncBundleImportTarget.PARENT_APP, result.target)
+        assertEquals("child-bundle-1", result.bundleId)
+    }
+
+    @Test
+    fun parentRejectsParentToChildBundle() {
+        val result = importEvaluator.evaluateForParent(parentBundle())
+
+        assertEquals(SyncBundleImportStatus.WRONG_DIRECTION, result.status)
+    }
+
+    @Test
+    fun childAcceptsParentToChildBundle() {
+        val result = importEvaluator.evaluateForChild(parentBundle())
+
+        assertEquals(SyncBundleImportStatus.ACCEPTED, result.status)
+        assertEquals(SyncBundleImportTarget.CHILD_APP, result.target)
+    }
+
+    @Test
+    fun childRejectsChildToParentBundle() {
+        val result = importEvaluator.evaluateForChild(childBundle())
+
+        assertEquals(SyncBundleImportStatus.WRONG_DIRECTION, result.status)
+    }
+
+    @Test
+    fun childDetectsMissingPolicyUpdatePayload() {
+        val result = importEvaluator.evaluateForChild(
+            parentBundle().copy(
+                payloads = listOf(
+                    SyncBundlePayload(SyncBundlePayloadKind.DIAGNOSTICS_TEXT, "note", "local debug note"),
+                ),
+            ),
+        )
+
+        assertEquals(SyncBundleImportStatus.MISSING_REQUIRED_PAYLOAD, result.status)
+    }
+
+    @Test
+    fun malformedBundleRejectedThroughCodecAndEvaluatorPath() {
+        val decoded = codec.decode("bad bundle")
+        val result = importEvaluator.malformedForParent(decoded.reason)
+
+        assertFalse(decoded.accepted)
+        assertEquals(SyncBundleImportStatus.MALFORMED, result.status)
+    }
+
+    @Test
+    fun emptyMvpChecklistSuggestsParentBuildsPolicy() {
+        val summary = acceptanceChecklist.summarize(emptyList())
+
+        assertEquals(MvpAcceptanceStatus.NOT_STARTED, summary.status)
+        assertEquals(MvpAcceptanceStep.PARENT_BUILDS_POLICY, summary.nextRecommendedStep)
+    }
+
+    @Test
+    fun completedPolicySuggestsExportSyncBundle() {
+        val summary = acceptanceChecklist.summarize(
+            listOf(MvpAcceptanceItem(MvpAcceptanceStep.PARENT_BUILDS_POLICY, MvpAcceptanceStatus.DONE)),
+        )
+
+        assertEquals(MvpAcceptanceStep.PARENT_EXPORTS_SYNC_BUNDLE, summary.nextRecommendedStep)
+    }
+
+    @Test
+    fun allMvpStepsDoneReturnsComplete() {
+        val summary = acceptanceChecklist.summarize(
+            MvpAcceptanceStep.entries.map { step -> MvpAcceptanceItem(step, MvpAcceptanceStatus.DONE) },
+        )
+
+        assertEquals(MvpAcceptanceStatus.DONE, summary.status)
+        assertNull(summary.nextRecommendedStep)
+    }
+
+    @Test
+    fun needsAttentionSurfacesNextStep() {
+        val summary = acceptanceChecklist.summarize(
+            listOf(
+                MvpAcceptanceItem(MvpAcceptanceStep.PARENT_BUILDS_POLICY, MvpAcceptanceStatus.DONE),
+                MvpAcceptanceItem(MvpAcceptanceStep.CHILD_IMPORTS_SYNC_BUNDLE, MvpAcceptanceStatus.NEEDS_ATTENTION),
+            ),
+        )
+
+        assertEquals(MvpAcceptanceStatus.NEEDS_ATTENTION, summary.status)
+        assertEquals(MvpAcceptanceStep.CHILD_IMPORTS_SYNC_BUNDLE, summary.nextRecommendedStep)
     }
 
     private fun childBundle(): SyncBundle {

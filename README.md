@@ -16,6 +16,8 @@ Vordain Basic is bypass-resistant, but it is not full protection. It is designed
 
 The local MVP now uses debug/local sync bundles for the parent-child loop. The parent app can bundle policy and pairing payloads into one parent-to-child text export, and the child app can bundle status, alerts, hardening, bypass-risk, active policy, audit, and diagnostics into one child-to-parent text export. Production sync is not enabled yet and will use encrypted relay later.
 
+Android share-sheet import is supported for these local sync bundles. Copy/paste remains available as a fallback, and each app keeps a local bundle inbox summary so accepted, rejected, and wrong-direction imports are visible during tablet testing.
+
 The product loop is:
 
 ```text

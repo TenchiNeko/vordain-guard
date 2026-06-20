@@ -61,6 +61,8 @@ class AuditTimelineReducerTest {
         assertTrue(AuditEntryType.entries.contains(AuditEntryType.SYNC_BUNDLE_REJECTED))
         assertTrue(AuditEntryType.entries.contains(AuditEntryType.PARENT_SYNC_BUNDLE_SHARED))
         assertTrue(AuditEntryType.entries.contains(AuditEntryType.CHILD_SYNC_BUNDLE_SHARED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.POLICY_APPLIED_FROM_BUNDLE))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.POLICY_REJECTED_FROM_BUNDLE))
     }
 
     @Test

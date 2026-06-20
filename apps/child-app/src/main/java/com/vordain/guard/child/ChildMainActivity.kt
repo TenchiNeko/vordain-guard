@@ -64,7 +64,14 @@ import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodec
 import com.vordain.guard.core.syncbundle.SyncBundle
 import com.vordain.guard.core.syncbundle.SyncBundleCodec
 import com.vordain.guard.core.syncbundle.SyncBundleDirection
+import com.vordain.guard.core.syncbundle.SyncBundleImportEvaluator
+import com.vordain.guard.core.syncbundle.SyncBundleImportResult
+import com.vordain.guard.core.syncbundle.SyncBundleImportStatus
 import com.vordain.guard.core.syncbundle.SyncBundleKind
+import com.vordain.guard.core.syncbundle.MvpAcceptanceChecklist
+import com.vordain.guard.core.syncbundle.MvpAcceptanceItem
+import com.vordain.guard.core.syncbundle.MvpAcceptanceStatus
+import com.vordain.guard.core.syncbundle.MvpAcceptanceStep
 import com.vordain.guard.core.syncbundle.SyncBundlePayload
 import com.vordain.guard.core.syncbundle.SyncBundlePayloadKind
 import com.vordain.guard.data.review.ReviewRequestReason
@@ -119,12 +126,15 @@ class ChildMainActivity : Activity() {
     private val childSecurityReportCodec = DebugChildSecurityReportCodec()
     private val basicDnsGuardDiagnosticsCodec = DebugBasicDnsGuardDiagnosticsCodec()
     private val syncBundleCodec = SyncBundleCodec()
+    private val syncBundleImportEvaluator = SyncBundleImportEvaluator()
+    private val mvpAcceptanceChecklist = MvpAcceptanceChecklist()
     private val bypassRiskEvaluator = BypassRiskEvaluator()
     private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
     private val dnsOnlyReadinessEvaluator = DnsOnlyReadinessEvaluator()
     private lateinit var stateStore: ChildDebugStateStore
     private lateinit var auditStore: ChildAuditStateStore
     private lateinit var alertStore: ChildAlertStateStore
+    private lateinit var bundleInboxStore: ChildBundleInboxStore
     private lateinit var statusText: TextView
     private lateinit var vpnPermissionText: TextView
     private lateinit var lastCommandText: TextView
@@ -156,6 +166,7 @@ class ChildMainActivity : Activity() {
     private lateinit var childSyncBundleOutputText: TextView
     private lateinit var parentSyncBundleInput: EditText
     private lateinit var parentSyncBundleOutputText: TextView
+    private lateinit var bundleInboxText: TextView
     private var vpnPermissionStatus: String = ChildVpnSmokeLabels.PERMISSION_UNKNOWN
     private var lastCommand: String = ChildVpnSmokeLabels.COMMAND_NONE
     private var shellStatus: String = ChildVpnSmokeLabels.STATUS_NOT_RUNNING
@@ -199,18 +210,28 @@ class ChildMainActivity : Activity() {
     private val localDebugEvents = mutableListOf<String>()
     private var auditTimeline: AuditTimeline = AuditTimeline()
     private var childAlertTimeline: ChildAlertTimeline = ChildAlertTimeline()
+    private var bundleInbox: List<ChildBundleInboxEntry> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         stateStore = ChildDebugStateStore(this)
         auditStore = ChildAuditStateStore(this)
         alertStore = ChildAlertStateStore(this)
+        bundleInboxStore = ChildBundleInboxStore(this)
         auditTimeline = auditStore.load()
         childAlertTimeline = alertStore.load()
+        bundleInbox = bundleInboxStore.load()
         restoreState(stateStore.load())
         setContentView(createSmokeTestView())
         statusText.text = shellStatus
         refreshDiagnosticsViews()
+        handleSharedTextIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSharedTextIntent(intent)
     }
 
     override fun onPause() {
@@ -258,6 +279,8 @@ class ChildMainActivity : Activity() {
         layout.addView(centerLabel(ChildVpnSmokeLabels.TITLE, textSize = 28f))
         layout.addView(centerLabel("Debug tablet build", textSize = 16f))
         layout.addView(centerLabel(ChildVpnSmokeLabels.WARNING, textSize = 18f))
+        layout.addView(sectionTitle("Local MVP flow"))
+        layout.addView(valueLabel(createMvpAcceptanceSummary(), textSize = 14f))
 
         layout.addView(sectionTitle(ChildVpnSmokeLabels.BASIC_DNS_TITLE))
         layout.addView(valueLabel(ChildVpnSmokeLabels.BASIC_DNS_NOT_FULL, textSize = 14f))
@@ -772,6 +795,7 @@ class ChildMainActivity : Activity() {
         layout.addView(valueLabel("Local debug bundle only.", textSize = 14f))
         layout.addView(valueLabel("Production sync will use encrypted relay later.", textSize = 14f))
         layout.addView(valueLabel("Policy payloads are verified before use.", textSize = 14f))
+        layout.addView(valueLabel("Android share-sheet imports and copy/paste imports use the same local validation.", textSize = 14f))
         parentSyncBundleInput = multiLineEditText(latestParentSyncBundlePayload.orEmpty())
         layout.addView(labeledField("Paste parent sync bundle", parentSyncBundleInput))
         layout.addView(button("Import parent sync bundle") {
@@ -782,6 +806,18 @@ class ChildMainActivity : Activity() {
         })
         parentSyncBundleOutputText = valueLabel("No parent sync bundle imported yet", textSize = 13f)
         layout.addView(parentSyncBundleOutputText)
+
+        layout.addView(sectionTitle("Bundle inbox"))
+        layout.addView(valueLabel("Local/debug bundle import history only.", textSize = 14f))
+        layout.addView(valueLabel("Policy payloads are verified before use.", textSize = 14f))
+        layout.addView(button("Copy latest bundle summary") {
+            copyLatestBundleInboxSummary()
+        })
+        layout.addView(button("Clear bundle inbox") {
+            clearBundleInbox()
+        })
+        bundleInboxText = valueLabel(createBundleInboxDisplay(), textSize = 13f)
+        layout.addView(bundleInboxText)
 
         layout.addView(sectionTitle("Local audit timeline"))
         layout.addView(valueLabel("Local explicit app-action timeline only.", textSize = 14f))
@@ -1935,27 +1971,42 @@ class ChildMainActivity : Activity() {
         )
     }
 
-    private fun importParentSyncBundle() {
-        val payload = parentSyncBundleInput.text.toString()
+    private fun importParentSyncBundle(
+        payload: String = parentSyncBundleInput.text.toString(),
+        sourceLabel: String = "Copy/paste import",
+    ) {
         latestParentSyncBundlePayload = payload
+        if (::parentSyncBundleInput.isInitialized) {
+            parentSyncBundleInput.setText(payload)
+        }
         val result = syncBundleCodec.decode(payload)
         val bundle = result.bundle
         if (!result.accepted || bundle == null) {
             recordSyncBundleRejected("Parent sync bundle rejected: ${result.reason}")
-            parentSyncBundleOutputText.text = "Parent sync bundle rejected: ${result.reason}"
+            recordBundleInbox(syncBundleImportEvaluator.malformedForChild(result.reason), sourceLabel)
+            if (::parentSyncBundleOutputText.isInitialized) {
+                parentSyncBundleOutputText.text = "Parent sync bundle rejected: ${result.reason}"
+            }
             saveCurrentState()
             return
         }
-        if (bundle.direction != SyncBundleDirection.PARENT_TO_CHILD) {
-            recordSyncBundleRejected("Parent sync bundle rejected: wrong direction ${bundle.direction}")
-            parentSyncBundleOutputText.text = "Parent sync bundle rejected: wrong direction ${bundle.direction}"
+        val importResult = syncBundleImportEvaluator.evaluateForChild(bundle)
+        if (importResult.status != SyncBundleImportStatus.ACCEPTED) {
+            recordSyncBundleRejected("Parent sync bundle rejected: ${importResult.summary}")
+            recordBundleInbox(importResult, sourceLabel)
+            if (::parentSyncBundleOutputText.isInitialized) {
+                parentSyncBundleOutputText.text = "Parent sync bundle rejected: ${importResult.summary}"
+            }
             saveCurrentState()
             return
         }
         val policyPayload = bundle.payloads.firstOrNull { it.kind == SyncBundlePayloadKind.POLICY_UPDATE }?.payloadText
         if (policyPayload.isNullOrBlank()) {
             recordSyncBundleRejected("Parent sync bundle rejected: no policy update payload")
-            parentSyncBundleOutputText.text = "Parent sync bundle rejected: no policy update payload"
+            recordBundleInbox(importResult.copy(status = SyncBundleImportStatus.MISSING_REQUIRED_PAYLOAD), sourceLabel)
+            if (::parentSyncBundleOutputText.isInitialized) {
+                parentSyncBundleOutputText.text = "Parent sync bundle rejected: no policy update payload"
+            }
             saveCurrentState()
             return
         }
@@ -1964,7 +2015,7 @@ class ChildMainActivity : Activity() {
         val accepted = policyHandoffResult?.accepted == true
         if (accepted) {
             recordAudit(
-                type = AuditEntryType.SYNC_BUNDLE_IMPORTED,
+                type = AuditEntryType.POLICY_APPLIED_FROM_BUNDLE,
                 severity = AuditSeverity.INFO,
                 title = "Parent sync bundle imported",
                 detail = "Parent-to-child sync bundle imported and verified policy update accepted.",
@@ -1976,10 +2027,22 @@ class ChildMainActivity : Activity() {
                 detail = "Verified policy update was accepted from local sync bundle.",
                 sourceLabel = "Sync bundle",
             )
-            parentSyncBundleOutputText.text = createParentSyncBundleImportOutput(bundle, "Policy update accepted")
+            recordBundleInbox(importResult, sourceLabel, appliedPolicyVersion = currentPolicyVersion)
+            if (::parentSyncBundleOutputText.isInitialized) {
+                parentSyncBundleOutputText.text = createParentSyncBundleImportOutput(bundle, "Policy update accepted")
+            }
         } else {
             recordSyncBundleRejected("Parent sync bundle policy update rejected")
-            parentSyncBundleOutputText.text = createParentSyncBundleImportOutput(bundle, "Policy update rejected")
+            recordAudit(
+                type = AuditEntryType.POLICY_REJECTED_FROM_BUNDLE,
+                severity = AuditSeverity.WARNING,
+                title = "Parent sync bundle policy rejected",
+                detail = "Parent-to-child sync bundle imported but policy verification rejected it.",
+            )
+            recordBundleInbox(importResult.copy(status = SyncBundleImportStatus.REJECTED), sourceLabel)
+            if (::parentSyncBundleOutputText.isInitialized) {
+                parentSyncBundleOutputText.text = createParentSyncBundleImportOutput(bundle, "Policy update rejected")
+            }
         }
         saveCurrentState()
         refreshDiagnosticsViews()
@@ -1990,6 +2053,81 @@ class ChildMainActivity : Activity() {
         parentSyncBundleInput.setText("")
         parentSyncBundleOutputText.text = "No parent sync bundle imported yet"
         saveCurrentState()
+    }
+
+    private fun handleSharedTextIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") {
+            return
+        }
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+        if (sharedText.isBlank()) {
+            return
+        }
+        importParentSyncBundle(sharedText, sourceLabel = "Android share import")
+    }
+
+    private fun recordBundleInbox(
+        result: SyncBundleImportResult,
+        sourceLabel: String,
+        appliedPolicyVersion: String = "none",
+    ) {
+        val now = System.currentTimeMillis()
+        val entry = ChildBundleInboxEntry(
+            id = "${now}-${result.status}",
+            importedAtMillis = now,
+            status = result.status.name,
+            sourceDeviceId = result.sourceDeviceId?.value ?: sourceLabel,
+            targetDeviceId = result.targetDeviceId?.value ?: "unspecified",
+            summary = result.summary,
+            payloadLabels = result.payloadLabels.take(12),
+            appliedPolicyVersion = appliedPolicyVersion,
+        )
+        bundleInbox = (listOf(entry) + bundleInbox).take(ChildBundleInboxStore.MAX_ENTRIES)
+        bundleInboxStore.save(bundleInbox)
+        if (::bundleInboxText.isInitialized) {
+            bundleInboxText.text = createBundleInboxDisplay()
+        }
+    }
+
+    private fun createBundleInboxDisplay(): String {
+        if (bundleInbox.isEmpty()) {
+            return "No bundle inbox entries yet\nLocal/debug bundle import history only."
+        }
+        return buildString {
+            append("Local/debug bundle import history only.\n")
+            bundleInbox.take(8).forEach { entry ->
+                append("${entry.importedAtMillis} / ${entry.status}\n")
+                append("Source: ${entry.sourceDeviceId}\n")
+                append("Target: ${entry.targetDeviceId}\n")
+                append("${entry.summary}\n")
+                append("Applied policy version: ${entry.appliedPolicyVersion}\n")
+                if (entry.payloadLabels.isNotEmpty()) {
+                    append("Payloads: ${entry.payloadLabels.joinToString(separator = ", ")}\n")
+                }
+            }
+        }.trimEnd()
+    }
+
+    private fun copyLatestBundleInboxSummary() {
+        val latest = bundleInbox.firstOrNull() ?: return
+        val summary = listOf(
+            "Vordain Guard local debug bundle inbox summary",
+            "${latest.importedAtMillis} / ${latest.status}",
+            "Source: ${latest.sourceDeviceId}",
+            "Target: ${latest.targetDeviceId}",
+            latest.summary,
+            "Applied policy version: ${latest.appliedPolicyVersion}",
+            latest.payloadLabels.joinToString(separator = ", "),
+        ).joinToString(separator = "\n")
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain bundle inbox summary", summary))
+        bundleInboxText.text = "${createBundleInboxDisplay()}\n\nCopied latest bundle summary."
+    }
+
+    private fun clearBundleInbox() {
+        bundleInbox = emptyList()
+        bundleInboxStore.save(bundleInbox)
+        bundleInboxText.text = createBundleInboxDisplay()
     }
 
     private fun recordSyncBundleRejected(reason: String) {
@@ -2043,6 +2181,34 @@ class ChildMainActivity : Activity() {
             append("Policy payloads are verified before use.\n")
             append(bundle.warningText)
         }
+    }
+
+    private fun createMvpAcceptanceSummary(): String {
+        val items = mutableListOf<MvpAcceptanceItem>()
+        if (!latestParentSyncBundlePayload.isNullOrBlank()) {
+            items += MvpAcceptanceItem(MvpAcceptanceStep.CHILD_IMPORTS_SYNC_BUNDLE, MvpAcceptanceStatus.DONE)
+        }
+        if (currentPolicySource == "Verified debug policy") {
+            items += MvpAcceptanceItem(MvpAcceptanceStep.CHILD_APPLIES_VERIFIED_POLICY, MvpAcceptanceStatus.DONE)
+        }
+        if (hardeningSetupSnapshot != null) {
+            items += MvpAcceptanceItem(MvpAcceptanceStep.CHILD_COMPLETES_HARDENING_REVIEW, MvpAcceptanceStatus.DONE)
+        }
+        if (
+            shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_ACTIVE ||
+            shellStatus == ChildVpnSmokeLabels.STATUS_BASIC_DNS_GUARD_STARTING
+        ) {
+            items += MvpAcceptanceItem(MvpAcceptanceStep.CHILD_STARTS_BASIC_DNS_GUARD, MvpAcceptanceStatus.DONE)
+        }
+        if (!latestChildSyncBundlePayload.isNullOrBlank()) {
+            items += MvpAcceptanceItem(MvpAcceptanceStep.CHILD_EXPORTS_STATUS_BUNDLE, MvpAcceptanceStatus.DONE)
+        }
+        val summary = mvpAcceptanceChecklist.summarize(items)
+        return listOf(
+            "Local MVP acceptance checklist: ${summary.completedCount}/${summary.totalCount} done",
+            "Next recommended step: ${summary.nextRecommendedStep?.toDisplayLabel() ?: "Complete"}",
+            "Local debug only. Production sync will use encrypted relay later.",
+        ).joinToString(separator = "\n")
     }
 
     private fun recordAudit(
@@ -2115,6 +2281,7 @@ class ChildMainActivity : Activity() {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
+            putExtra(Intent.EXTRA_SUBJECT, "Vordain Guard local debug bundle")
         }
         startActivity(Intent.createChooser(intent, title))
     }
@@ -2993,6 +3160,20 @@ class ChildMainActivity : Activity() {
             ChildSecurityActiveMode.BASIC_DNS_GUARD -> "Basic DNS Guard active"
             ChildSecurityActiveMode.DNS_ONLY_LAB -> "DNS-only lab active"
             ChildSecurityActiveMode.FULL_TUNNEL_LAB -> "Full-tunnel lab active"
+        }
+    }
+
+    private fun MvpAcceptanceStep.toDisplayLabel(): String {
+        return when (this) {
+            MvpAcceptanceStep.PARENT_BUILDS_POLICY -> "Parent builds DNS policy"
+            MvpAcceptanceStep.PARENT_EXPORTS_SYNC_BUNDLE -> "Parent exports sync bundle"
+            MvpAcceptanceStep.CHILD_IMPORTS_SYNC_BUNDLE -> "Import parent sync bundle"
+            MvpAcceptanceStep.CHILD_APPLIES_VERIFIED_POLICY -> "Apply verified policy"
+            MvpAcceptanceStep.CHILD_COMPLETES_HARDENING_REVIEW -> "Complete hardening review"
+            MvpAcceptanceStep.CHILD_STARTS_BASIC_DNS_GUARD -> "Start Basic DNS Guard"
+            MvpAcceptanceStep.CHILD_EXPORTS_STATUS_BUNDLE -> "Export child sync bundle"
+            MvpAcceptanceStep.PARENT_IMPORTS_STATUS_BUNDLE -> "Parent imports child sync bundle"
+            MvpAcceptanceStep.PARENT_REVIEWS_ALERTS -> "Parent reviews alerts"
         }
     }
 

@@ -121,21 +121,59 @@ Parent-to-child bundle:
 
 1. In the parent app, build or edit the DNS policy.
 2. Tap Build parent sync bundle.
-3. Copy or share the parent sync bundle.
-4. In the child app, paste it into Import parent sync bundle.
-5. Tap Import parent sync bundle.
+3. Tap Share parent sync bundle.
+4. Choose Vordain Guard Child from the Android share sheet.
+5. Confirm the child Bundle inbox shows the import result.
 6. Confirm the child reports that the policy payload was verified before use.
 
 Child-to-parent bundle:
 
 1. In the child app, review Basic DNS Guard status, alerts, hardening, bypass risk, active policy, and audit timeline.
 2. Tap Build child sync bundle.
-3. Copy or share the child sync bundle.
-4. In the parent app, paste it into Import child sync bundle.
-5. Tap Import child sync bundle.
+3. Tap Share child sync bundle.
+4. Choose Vordain Guard Parent from the Android share sheet.
+5. Confirm the parent Bundle inbox shows the import result.
 6. Review the included status, alert, hardening, bypass-risk, active policy, audit, and diagnostics sections.
 
+Copy/paste fallback:
+
+1. Use Copy parent sync bundle or Copy child sync bundle.
+2. Paste the bundle into the matching import field in the other app.
+3. Tap Import parent sync bundle or Import child sync bundle.
+4. Review the Bundle inbox result.
+
 Bundles are local/debug only. They do not send anything automatically. Production sync will use encrypted relay later. The bundle flow is intended to avoid juggling separate policy, alert, status, setup, bypass-risk, and audit payloads during tablet testing.
+
+Bundle inbox:
+
+* Parent app records child bundle import summaries.
+* Child app records parent bundle import summaries and applied policy version when accepted.
+* Inbox entries store status, source device, target device, payload labels, and summary only.
+* Use Clear bundle inbox to reset local debug history.
+
+Troubleshooting:
+
+* Wrong direction bundle: share the parent bundle to the child app, or share the child bundle to the parent app.
+* Missing policy update payload: rebuild the parent sync bundle after building a DNS policy.
+* Malformed bundle: use the copy button again and make sure the first line is `VORDAIN_DEBUG_SYNC_BUNDLE_V1`.
+* No share target appears: use copy/paste fallback.
+* Policy rejected: the child app did not accept the policy verification result, so it keeps the previous verified policy or fallback policy.
+
+## Local MVP Acceptance Checklist
+
+The apps show a local MVP checklist summary to keep tablet testing in order:
+
+1. Parent builds policy.
+2. Parent exports sync bundle.
+3. Child imports sync bundle.
+4. Child applies verified policy.
+5. Child completes hardening review.
+6. Child starts Basic DNS Guard.
+7. Child exports status bundle.
+8. Parent imports status bundle.
+9. Parent reviews alerts.
+
+This checklist is a local testing aid. It is not a production protection claim.
 
 ## Parent DNS Policy Editor
 
