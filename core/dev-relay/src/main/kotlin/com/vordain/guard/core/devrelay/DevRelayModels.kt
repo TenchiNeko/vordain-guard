@@ -39,3 +39,68 @@ data class DevRelayMessagesCodecResult(
     val reason: String,
     val messages: List<DevRelayMessage> = emptyList(),
 )
+
+enum class DevRelayDebugCommandType {
+    PARENT_RELAY_HEALTH_CHECK,
+    PARENT_SEND_POLICY_BUNDLE,
+    PARENT_FETCH_CHILD_STATUS_MESSAGES,
+    PARENT_ACK_FETCHED_MESSAGE,
+    PARENT_EXPORT_DEBUG_SNAPSHOT,
+    CHILD_RELAY_HEALTH_CHECK,
+    CHILD_FETCH_POLICY_BUNDLE,
+    CHILD_IMPORT_LATEST_POLICY_BUNDLE,
+    CHILD_SEND_STATUS_BUNDLE,
+    CHILD_SEND_HEARTBEAT_STATUS_REPORT,
+    CHILD_START_BASIC_DNS_GUARD,
+    CHILD_STOP_BASIC_DNS_GUARD,
+}
+
+enum class DevRelayDebugCommandStatus {
+    PENDING,
+    FETCHED,
+    COMPLETED,
+}
+
+data class DevRelayDebugCommand(
+    val commandId: String,
+    val type: DevRelayDebugCommandType,
+    val sourceDeviceId: DeviceId,
+    val targetDeviceId: DeviceId,
+    val createdAtMillis: Long,
+    val status: DevRelayDebugCommandStatus = DevRelayDebugCommandStatus.PENDING,
+)
+
+data class DevRelayDebugCommandResult(
+    val resultId: String,
+    val commandId: String,
+    val type: DevRelayDebugCommandType,
+    val sourceDeviceId: DeviceId,
+    val targetDeviceId: DeviceId,
+    val createdAtMillis: Long,
+    val success: Boolean,
+    val summary: String,
+)
+
+data class DevRelayDebugCommandCodecResult(
+    val accepted: Boolean,
+    val reason: String,
+    val command: DevRelayDebugCommand? = null,
+)
+
+data class DevRelayDebugCommandsCodecResult(
+    val accepted: Boolean,
+    val reason: String,
+    val commands: List<DevRelayDebugCommand> = emptyList(),
+)
+
+data class DevRelayDebugCommandResultCodecResult(
+    val accepted: Boolean,
+    val reason: String,
+    val result: DevRelayDebugCommandResult? = null,
+)
+
+data class DevRelayDebugCommandResultsCodecResult(
+    val accepted: Boolean,
+    val reason: String,
+    val results: List<DevRelayDebugCommandResult> = emptyList(),
+)

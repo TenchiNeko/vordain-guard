@@ -140,6 +140,7 @@ class ChildMainActivity : Activity() {
     private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
     private val dnsOnlyReadinessEvaluator = DnsOnlyReadinessEvaluator()
     private val localDevRelayClient = ChildLocalDevRelayClient()
+    private lateinit var remoteTestController: ChildRemoteTestController
     private lateinit var stateStore: ChildDebugStateStore
     private lateinit var auditStore: ChildAuditStateStore
     private lateinit var alertStore: ChildAlertStateStore
@@ -178,6 +179,7 @@ class ChildMainActivity : Activity() {
     private lateinit var relayBaseUrlInput: EditText
     private lateinit var parentRelayDeviceInput: EditText
     private lateinit var relayOutputText: TextView
+    private lateinit var remoteTestOutputText: TextView
     private lateinit var bundleInboxText: TextView
     private var vpnPermissionStatus: String = ChildVpnSmokeLabels.PERMISSION_UNKNOWN
     private var lastCommand: String = ChildVpnSmokeLabels.COMMAND_NONE
@@ -237,6 +239,7 @@ class ChildMainActivity : Activity() {
         auditStore = ChildAuditStateStore(this)
         alertStore = ChildAlertStateStore(this)
         bundleInboxStore = ChildBundleInboxStore(this)
+        remoteTestController = ChildRemoteTestController(this, localDevRelayClient)
         auditTimeline = auditStore.load()
         childAlertTimeline = alertStore.load()
         bundleInbox = bundleInboxStore.load()
@@ -256,6 +259,11 @@ class ChildMainActivity : Activity() {
     override fun onPause() {
         saveCurrentState()
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        remoteTestController.stop()
+        super.onDestroy()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -829,6 +837,17 @@ class ChildMainActivity : Activity() {
         layout.addView(button("Ack latest fetched bundle") {
             ackLatestRelayMessage()
         })
+        layout.addView(sectionTitle("Debug remote test harness"))
+        layout.addView(valueLabel("Debug/local only. Remote test mode must be visibly enabled in this app.", textSize = 14f))
+        layout.addView(valueLabel("Only allowlisted child app actions can run. Release builds use a no-op controller.", textSize = 14f))
+        layout.addView(button("Enable remote test mode") {
+            startRemoteTestMode()
+        })
+        layout.addView(button("Disable remote test mode") {
+            stopRemoteTestMode()
+        })
+        remoteTestOutputText = valueLabel(createRemoteTestOutput(), textSize = 13f)
+        layout.addView(remoteTestOutputText)
         layout.addView(button("Copy relay diagnostics") {
             copyRelayDiagnostics()
         })
@@ -2151,6 +2170,84 @@ class ChildMainActivity : Activity() {
                     ).joinToString(separator = "\n"),
                 )
             }
+        }
+    }
+
+    private fun startRemoteTestMode() {
+        val baseUrl = relayBaseUrlInput.text.toString()
+        val childId = currentChildDeviceId()
+        updateRemoteTestStatus("Remote test mode starting for $childId. Debug/local only.")
+        remoteTestController.start(
+            config = ChildRemoteTestConfig(
+                baseUrl = baseUrl,
+                childDeviceId = childId,
+            ),
+            handlers = ChildRemoteTestHandlers(
+                relayHealthCheck = {
+                    val result = localDevRelayClient.health(baseUrl)
+                    ChildRemoteTestActionResult(result.success, result.summary)
+                },
+                fetchPolicyBundle = {
+                    fetchParentBundlesFromRelay()
+                    ChildRemoteTestActionResult(true, "Requested parent policy bundle fetch/import from local dev relay.")
+                },
+                importLatestPolicyBundle = {
+                    val payload = latestParentSyncBundlePayload.orEmpty()
+                    if (payload.isBlank()) {
+                        ChildRemoteTestActionResult(false, "No latest parent sync bundle is available to import.")
+                    } else {
+                        importParentSyncBundle(payload, sourceLabel = "Remote test harness")
+                        ChildRemoteTestActionResult(true, "Requested latest parent sync bundle import through verified policy path.")
+                    }
+                },
+                sendChildStatusBundle = {
+                    buildChildSyncBundle()
+                    sendChildSyncBundleToRelay()
+                    ChildRemoteTestActionResult(true, "Requested child status bundle send through local dev relay.")
+                },
+                sendHeartbeatStatusReport = {
+                    buildChildSyncBundle()
+                    sendChildSyncBundleToRelay()
+                    ChildRemoteTestActionResult(true, "Requested child heartbeat/status report send through local dev relay.")
+                },
+                startBasicDnsGuard = {
+                    startBasicDnsGuardWhenAllowed()
+                    ChildRemoteTestActionResult(true, "Requested Basic DNS Guard start through normal VPN permission-safe path.")
+                },
+                stopBasicDnsGuard = {
+                    stopBasicDnsGuard()
+                    ChildRemoteTestActionResult(true, "Requested Basic DNS Guard stop.")
+                },
+            ),
+            onStatus = ::updateRemoteTestStatus,
+        )
+    }
+
+    private fun stopRemoteTestMode() {
+        remoteTestController.stop()
+        updateRemoteTestStatus("Remote test mode stopped.")
+    }
+
+    private fun updateRemoteTestStatus(text: String) {
+        if (::remoteTestOutputText.isInitialized) {
+            remoteTestOutputText.text = createRemoteTestOutput(text)
+        }
+    }
+
+    private fun createRemoteTestOutput(
+        status: String = if (::remoteTestController.isInitialized) {
+            remoteTestController.status()
+        } else {
+            "Remote test mode stopped."
+        },
+    ): String {
+        return buildString {
+            append("Remote test mode: ")
+            append(if (::remoteTestController.isInitialized && remoteTestController.isActive()) "ACTIVE" else "STOPPED")
+            append('\n')
+            append(status)
+            append('\n')
+            append("Local dev relay only. No arbitrary UI control, shell commands, hidden control, or VPN permission bypass.")
         }
     }
 

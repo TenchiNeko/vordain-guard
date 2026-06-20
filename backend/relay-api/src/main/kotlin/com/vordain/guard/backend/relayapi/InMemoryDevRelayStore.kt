@@ -1,12 +1,18 @@
 package com.vordain.guard.backend.relayapi
 
 import com.vordain.guard.core.devrelay.DevRelayDirection
+import com.vordain.guard.core.devrelay.DevRelayDebugCommand
+import com.vordain.guard.core.devrelay.DevRelayDebugCommandResult
+import com.vordain.guard.core.devrelay.DevRelayDebugCommandStatus
 import com.vordain.guard.core.devrelay.DevRelayInboxQuery
 import com.vordain.guard.core.devrelay.DevRelayMessage
 import com.vordain.guard.core.devrelay.DevRelayMessageStatus
+import com.vordain.guard.core.model.DeviceId
 
 class InMemoryDevRelayStore {
     private val messages = linkedMapOf<String, DevRelayMessage>()
+    private val debugCommands = linkedMapOf<String, DevRelayDebugCommand>()
+    private val debugResults = linkedMapOf<String, DevRelayDebugCommandResult>()
 
     @Synchronized
     fun put(message: DevRelayMessage): DevRelayMessage {
@@ -49,7 +55,45 @@ class InMemoryDevRelayStore {
             pendingCount = messages.values.count { it.status == DevRelayMessageStatus.PENDING },
             fetchedCount = messages.values.count { it.status == DevRelayMessageStatus.FETCHED },
             acknowledgedCount = messages.values.count { it.status == DevRelayMessageStatus.ACKNOWLEDGED },
+            pendingDebugCommandCount = debugCommands.values.count { it.status == DevRelayDebugCommandStatus.PENDING },
+            debugResultCount = debugResults.size,
         )
+    }
+
+    @Synchronized
+    fun putDebugCommand(command: DevRelayDebugCommand): DevRelayDebugCommand {
+        debugCommands[command.commandId] = command
+        return command
+    }
+
+    @Synchronized
+    fun queryDebugCommands(targetDeviceId: DeviceId): List<DevRelayDebugCommand> {
+        val matches = debugCommands.values.filter { command ->
+            command.targetDeviceId == targetDeviceId &&
+                command.status == DevRelayDebugCommandStatus.PENDING
+        }
+        matches.forEach { command ->
+            debugCommands[command.commandId] = command.copy(status = DevRelayDebugCommandStatus.FETCHED)
+        }
+        return matches.map { command ->
+            command.copy(status = DevRelayDebugCommandStatus.FETCHED)
+        }
+    }
+
+    @Synchronized
+    fun putDebugResult(result: DevRelayDebugCommandResult): DevRelayDebugCommandResult {
+        debugResults[result.resultId] = result
+        debugCommands[result.commandId]?.let { command ->
+            debugCommands[result.commandId] = command.copy(status = DevRelayDebugCommandStatus.COMPLETED)
+        }
+        return result
+    }
+
+    @Synchronized
+    fun queryDebugResults(targetDeviceId: DeviceId): List<DevRelayDebugCommandResult> {
+        return debugResults.values.filter { result ->
+            result.targetDeviceId == targetDeviceId
+        }
     }
 }
 
@@ -58,4 +102,6 @@ data class DevRelayStoreStats(
     val pendingCount: Int,
     val fetchedCount: Int,
     val acknowledgedCount: Int,
+    val pendingDebugCommandCount: Int = 0,
+    val debugResultCount: Int = 0,
 )

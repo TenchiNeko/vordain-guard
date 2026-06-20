@@ -101,6 +101,7 @@ class ParentMainActivity : Activity() {
     private val policyPreviewEngine = DefaultPolicyEngine()
     private val encryptedDnsResolverSeedList = EncryptedDnsResolverSeedList()
     private val localDevRelayClient = ParentLocalDevRelayClient()
+    private lateinit var remoteTestController: ParentRemoteTestController
     private lateinit var stateStore: ParentDebugStateStore
     private lateinit var reportHistoryStore: ParentReportHistoryStore
     private lateinit var bundleInboxStore: ParentBundleInboxStore
@@ -137,6 +138,7 @@ class ParentMainActivity : Activity() {
     private lateinit var parentSyncBundleOutput: TextView
     private lateinit var relayBaseUrlInput: EditText
     private lateinit var relayOutput: TextView
+    private lateinit var remoteTestOutput: TextView
     private lateinit var bundleInboxOutput: TextView
     private lateinit var reportHistoryOutput: TextView
     private var lastPayload: String = ""
@@ -165,6 +167,7 @@ class ParentMainActivity : Activity() {
         stateStore = ParentDebugStateStore(this)
         reportHistoryStore = ParentReportHistoryStore(this)
         bundleInboxStore = ParentBundleInboxStore(this)
+        remoteTestController = ParentRemoteTestController(this, localDevRelayClient)
         reportHistory = reportHistoryStore.load()
         bundleInbox = bundleInboxStore.load()
         setContentView(createView())
@@ -180,6 +183,11 @@ class ParentMainActivity : Activity() {
     override fun onPause() {
         stateStore.save(createSnapshot())
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        remoteTestController.stop()
+        super.onDestroy()
     }
 
     private fun createView(): ScrollView {
@@ -368,6 +376,17 @@ class ParentMainActivity : Activity() {
         layout.addView(button("Ack latest fetched bundle") {
             ackLatestRelayMessage()
         })
+        layout.addView(sectionTitle("Debug remote test harness"))
+        layout.addView(valueLabel("Debug/local only. Remote test mode must be visibly enabled in this app.", 14f))
+        layout.addView(valueLabel("Only allowlisted parent app actions can run. Release builds use a no-op controller.", 14f))
+        layout.addView(button("Enable remote test mode") {
+            startRemoteTestMode()
+        })
+        layout.addView(button("Disable remote test mode") {
+            stopRemoteTestMode()
+        })
+        remoteTestOutput = valueLabel(createRemoteTestOutput(), 13f)
+        layout.addView(remoteTestOutput)
         layout.addView(button("Copy relay diagnostics") {
             copyRelayDiagnostics()
         })
@@ -872,6 +891,74 @@ class ParentMainActivity : Activity() {
                     ).joinToString(separator = "\n"),
                 )
             }
+        }
+    }
+
+    private fun startRemoteTestMode() {
+        val baseUrl = relayBaseUrlInput.text.toString()
+        val parentDeviceId = parentDeviceInput.text.toString().trim().ifBlank {
+            ParentDebugStateSnapshot.DEFAULT_PARENT_DEVICE_ID
+        }
+        updateRemoteTestStatus("Remote test mode starting for $parentDeviceId. Debug/local only.")
+        remoteTestController.start(
+            config = ParentRemoteTestConfig(
+                baseUrl = baseUrl,
+                parentDeviceId = parentDeviceId,
+            ),
+            handlers = ParentRemoteTestHandlers(
+                relayHealthCheck = {
+                    val result = localDevRelayClient.health(baseUrl)
+                    ParentRemoteTestActionResult(result.success, result.summary)
+                },
+                sendPolicyBundle = {
+                    if (lastParentSyncBundlePayload.isBlank()) {
+                        buildParentSyncBundle()
+                    }
+                    sendParentSyncBundleToRelay()
+                    ParentRemoteTestActionResult(true, "Requested parent-to-child bundle send through local dev relay.")
+                },
+                fetchChildStatusMessages = {
+                    fetchChildBundlesFromRelay()
+                    ParentRemoteTestActionResult(true, "Requested child bundle fetch/import from local dev relay.")
+                },
+                ackFetchedMessage = {
+                    ackLatestRelayMessage()
+                    ParentRemoteTestActionResult(true, "Requested ack for latest fetched relay message.")
+                },
+                exportDebugSnapshot = {
+                    buildParentSyncBundle()
+                    ParentRemoteTestActionResult(true, "Built latest parent debug snapshot bundle.")
+                },
+            ),
+            onStatus = ::updateRemoteTestStatus,
+        )
+    }
+
+    private fun stopRemoteTestMode() {
+        remoteTestController.stop()
+        updateRemoteTestStatus("Remote test mode stopped.")
+    }
+
+    private fun updateRemoteTestStatus(text: String) {
+        if (::remoteTestOutput.isInitialized) {
+            remoteTestOutput.text = createRemoteTestOutput(text)
+        }
+    }
+
+    private fun createRemoteTestOutput(
+        status: String = if (::remoteTestController.isInitialized) {
+            remoteTestController.status()
+        } else {
+            "Remote test mode stopped."
+        },
+    ): String {
+        return buildString {
+            append("Remote test mode: ")
+            append(if (::remoteTestController.isInitialized && remoteTestController.isActive()) "ACTIVE" else "STOPPED")
+            append('\n')
+            append(status)
+            append('\n')
+            append("Local dev relay only. No arbitrary UI control, shell commands, or hidden control.")
         }
     }
 

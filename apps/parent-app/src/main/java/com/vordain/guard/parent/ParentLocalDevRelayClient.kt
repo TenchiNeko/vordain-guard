@@ -2,6 +2,9 @@ package com.vordain.guard.parent
 
 import com.vordain.guard.core.devrelay.DevRelayMessage
 import com.vordain.guard.core.devrelay.DevRelayMessageCodec
+import com.vordain.guard.core.devrelay.DevRelayDebugCommand
+import com.vordain.guard.core.devrelay.DevRelayDebugCommandCodec
+import com.vordain.guard.core.devrelay.DevRelayDebugCommandResult
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
@@ -15,6 +18,7 @@ data class ParentDevRelayClientResult(
 
 class ParentLocalDevRelayClient(
     private val codec: DevRelayMessageCodec = DevRelayMessageCodec(),
+    private val commandCodec: DevRelayDebugCommandCodec = DevRelayDebugCommandCodec(),
 ) {
     fun health(baseUrl: String): ParentDevRelayClientResult {
         val response = request(
@@ -82,6 +86,45 @@ class ParentLocalDevRelayClient(
         )
     }
 
+    fun fetchCommands(
+        baseUrl: String,
+        targetDeviceId: String,
+    ): ParentDevRelayCommandFetchResult {
+        val response = request(
+            method = "GET",
+            url = "${baseUrl.trimEnd('/')}/debug/v1/test-commands?targetDeviceId=${targetDeviceId.encodeQuery()}",
+            body = null,
+        )
+        if (response.code !in 200..299) {
+            return ParentDevRelayCommandFetchResult(false, "command fetch ${response.code}: ${response.body}")
+        }
+        val decoded = commandCodec.decodeCommands(response.body)
+        return ParentDevRelayCommandFetchResult(
+            success = decoded.accepted,
+            summary = if (decoded.accepted) {
+                "command fetch accepted: ${decoded.commands.size} command(s)"
+            } else {
+                "command fetch rejected: ${decoded.reason}"
+            },
+            commands = decoded.commands,
+        )
+    }
+
+    fun sendCommandResult(
+        baseUrl: String,
+        result: DevRelayDebugCommandResult,
+    ): ParentDevRelayClientResult {
+        val response = request(
+            method = "POST",
+            url = "${baseUrl.trimEnd('/')}/debug/v1/test-results",
+            body = commandCodec.encodeResult(result),
+        )
+        return ParentDevRelayClientResult(
+            success = response.code in 200..299,
+            summary = "command result ${response.code}: ${response.body}",
+        )
+    }
+
     private fun request(
         method: String,
         url: String,
@@ -121,3 +164,9 @@ class ParentLocalDevRelayClient(
         private const val TIMEOUT_MILLIS = 2_000
     }
 }
+
+data class ParentDevRelayCommandFetchResult(
+    val success: Boolean,
+    val summary: String,
+    val commands: List<DevRelayDebugCommand> = emptyList(),
+)

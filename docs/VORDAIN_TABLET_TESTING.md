@@ -233,11 +233,31 @@ Relay troubleshooting:
 Security notes:
 
 * Local dev relay only.
-* Manual send/fetch only; no background polling.
+* Normal sync remains manual send/fetch only; the remote test harness polls only while visibly enabled for local debugging.
 * No production encryption or authentication yet.
 * Trusted LAN only; do not expose it to the internet.
 * Do not put PINs, account secrets, or private notes into debug bundle text.
 * Production sync will use encrypted relay later.
+
+Remote test harness:
+
+1. Start the local dev relay.
+2. Open both tablet apps and leave them visible.
+3. In each app's Local dev relay section, tap Enable remote test mode.
+4. From the development machine, run commands such as:
+
+```bash
+tools/vordain_remote_test.sh parent-health
+tools/vordain_remote_test.sh child-health
+tools/vordain_remote_test.sh parent-send-policy
+tools/vordain_remote_test.sh child-fetch-policy
+tools/vordain_remote_test.sh child-import-policy
+tools/vordain_remote_test.sh child-send-status
+tools/vordain_remote_test.sh parent-fetch-status
+tools/vordain_remote_test.sh summary
+```
+
+Remote test mode is debug/local only and visibly enabled in-app. It polls only while enabled, uses allowlisted app-level actions, does not run shell commands, does not tap arbitrary UI coordinates, and does not bypass Android VPN permission prompts. See [REMOTE_TEST_HARNESS.md](REMOTE_TEST_HARNESS.md).
 
 The local MVP checklist now also includes the relay loop:
 
