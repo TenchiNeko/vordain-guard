@@ -22,6 +22,8 @@ data class ParentDebugStateSnapshot(
     val latestChildSecurityStatusReportPayload: String? = null,
     val latestBypassRiskReportPayload: String? = null,
     val latestChildAlertReportPayload: String? = null,
+    val latestChildSyncBundlePayload: String? = null,
+    val latestParentSyncBundlePayload: String? = null,
 ) {
     companion object {
         const val DEFAULT_TARGET_CHILD_DEVICE_ID = "child-debug-device"

@@ -55,6 +55,15 @@ class AuditTimelineReducerTest {
     }
 
     @Test
+    fun syncBundleAuditTypesAreRepresented() {
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.SYNC_BUNDLE_CREATED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.SYNC_BUNDLE_IMPORTED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.SYNC_BUNDLE_REJECTED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.PARENT_SYNC_BUNDLE_SHARED))
+        assertTrue(AuditEntryType.entries.contains(AuditEntryType.CHILD_SYNC_BUNDLE_SHARED))
+    }
+
+    @Test
     fun sourceHasNoForbiddenTerms() {
         val source = Files.walk(Path("src/main"))
             .filter(Files::isRegularFile)

@@ -53,6 +53,12 @@ import com.vordain.guard.core.statusreport.ChildSecuritySignal
 import com.vordain.guard.core.statusreport.ChildSecurityStatusReport
 import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodec
 import com.vordain.guard.core.statusreport.DebugChildSecurityReportCodecResult
+import com.vordain.guard.core.syncbundle.SyncBundle
+import com.vordain.guard.core.syncbundle.SyncBundleCodec
+import com.vordain.guard.core.syncbundle.SyncBundleDirection
+import com.vordain.guard.core.syncbundle.SyncBundleKind
+import com.vordain.guard.core.syncbundle.SyncBundlePayload
+import com.vordain.guard.core.syncbundle.SyncBundlePayloadKind
 import com.vordain.guard.features.bypassrisk.BypassRiskCategory
 import com.vordain.guard.features.bypassrisk.BypassRiskOverallStatus
 import com.vordain.guard.features.bypassrisk.BypassRiskStatus
@@ -78,6 +84,7 @@ class ParentMainActivity : Activity() {
     private val childAlertReportCodec = DebugChildAlertReportCodec()
     private val bypassRiskReportCodec = DebugBypassRiskReportCodec()
     private val debugPayloadEnvelopeCodec = VordainDebugPayloadEnvelopeCodec()
+    private val syncBundleCodec = SyncBundleCodec()
     private val policyPresetFactory = PolicyPresetFactory()
     private val policyPreviewEngine = DefaultPolicyEngine()
     private val encryptedDnsResolverSeedList = EncryptedDnsResolverSeedList()
@@ -111,6 +118,9 @@ class ParentMainActivity : Activity() {
     private lateinit var childAlertReportOutput: TextView
     private lateinit var bypassRiskReportInput: EditText
     private lateinit var bypassRiskReportOutput: TextView
+    private lateinit var childSyncBundleInput: EditText
+    private lateinit var childSyncBundleOutput: TextView
+    private lateinit var parentSyncBundleOutput: TextView
     private lateinit var reportHistoryOutput: TextView
     private var lastPayload: String = ""
     private var lastPairingInvitePayload: String = ""
@@ -124,6 +134,9 @@ class ParentMainActivity : Activity() {
     private var decodedChildAlertReport: DebugChildAlertReport? = null
     private var lastBypassRiskReportPayload: String = ""
     private var decodedBypassRiskReport: DebugBypassRiskReport? = null
+    private var lastChildSyncBundlePayload: String = ""
+    private var lastParentSyncBundlePayload: String = ""
+    private var decodedChildSyncBundle: SyncBundle? = null
     private var selectedPolicyPreset: PolicyPreset = PolicyPreset.BASIC_DNS_GUARD
     private var reportHistory: List<ParentReportHistoryEntry> = emptyList()
 
@@ -152,10 +165,10 @@ class ParentMainActivity : Activity() {
         layout.addView(sectionTitle("Recommended local MVP order"))
         layout.addView(valueLabel(
             listOf(
-                "1. Create pairing invite.",
-                "2. Build DNS policy.",
-                "3. Review hardening report.",
-                "4. Review child status report.",
+                "1. Build/edit DNS policy.",
+                "2. Export parent sync bundle.",
+                "3. Import child sync bundle.",
+                "4. Review child status, alerts, and hardening.",
                 "5. Adjust policy.",
             ).joinToString(separator = "\n"),
             14f,
@@ -170,6 +183,8 @@ class ParentMainActivity : Activity() {
         lastChildSecurityStatusReportPayload = snapshot.latestChildSecurityStatusReportPayload.orEmpty()
         lastChildAlertReportPayload = snapshot.latestChildAlertReportPayload.orEmpty()
         lastBypassRiskReportPayload = snapshot.latestBypassRiskReportPayload.orEmpty()
+        lastChildSyncBundlePayload = snapshot.latestChildSyncBundlePayload.orEmpty()
+        lastParentSyncBundlePayload = snapshot.latestParentSyncBundlePayload.orEmpty()
         selectedPolicyPreset = snapshot.selectedPolicyPreset.toPolicyPreset()
         pairingSessionInput = editText(snapshot.pairingSessionId)
         parentDeviceInput = editText(snapshot.parentDeviceId)
@@ -181,6 +196,7 @@ class ParentMainActivity : Activity() {
         childSecurityReportInput = editText(lastChildSecurityStatusReportPayload)
         childAlertReportInput = editText(lastChildAlertReportPayload)
         bypassRiskReportInput = editText(lastBypassRiskReportPayload)
+        childSyncBundleInput = editText(lastChildSyncBundlePayload)
         targetDeviceInput = editText(snapshot.targetChildDeviceId)
         policyVersionInput = editText(snapshot.policyVersion)
         allowDomainsInput = editText(snapshot.allowDomainsText)
@@ -287,6 +303,22 @@ class ParentMainActivity : Activity() {
         layout.addView(payloadOutput)
         layout.addView(valueLabel("Production policy sync will use signed encrypted delivery later.", 14f))
 
+        layout.addView(sectionTitle("Export parent sync bundle"))
+        layout.addView(valueLabel("Local debug bundle only.", 14f))
+        layout.addView(valueLabel("Production sync will use encrypted relay later.", 14f))
+        layout.addView(valueLabel("Child app must verify policy payload before using it.", 14f))
+        layout.addView(button("Build parent sync bundle") {
+            buildParentSyncBundle()
+        })
+        layout.addView(button("Copy parent sync bundle") {
+            copyParentSyncBundle()
+        })
+        layout.addView(button("Share parent sync bundle") {
+            shareParentSyncBundle()
+        })
+        parentSyncBundleOutput = valueLabel(createParentSyncBundleOutput(), 13f)
+        layout.addView(parentSyncBundleOutput)
+
         layout.addView(sectionTitle("Child hardening setup"))
         layout.addView(valueLabel("This debug report is parent/child copy-paste only. Production will use encrypted delivery later.", 14f))
         layout.addView(valueLabel("Vordain does not receive or record the PIN.", 14f))
@@ -337,6 +369,19 @@ class ParentMainActivity : Activity() {
         })
         childAlertReportOutput = valueLabel(createChildAlertReportOutput(), 14f)
         layout.addView(childAlertReportOutput)
+
+        layout.addView(sectionTitle("Import child sync bundle"))
+        layout.addView(valueLabel("Local debug bundle only.", 14f))
+        layout.addView(valueLabel("Production sync will use encrypted relay later.", 14f))
+        layout.addView(labeledField("Paste child sync bundle", childSyncBundleInput))
+        layout.addView(button("Import child sync bundle") {
+            importChildSyncBundle()
+        })
+        layout.addView(button("Clear child sync bundle import") {
+            clearChildSyncBundleImport()
+        })
+        childSyncBundleOutput = valueLabel(createChildSyncBundleImportOutput(), 13f)
+        layout.addView(childSyncBundleOutput)
 
         layout.addView(sectionTitle("DNS-only bypass risk"))
         layout.addView(valueLabel("DNS-only filtering is not full protection.", 14f))
@@ -537,6 +582,218 @@ class ParentMainActivity : Activity() {
         )
     }
 
+    private fun buildParentSyncBundle() {
+        if (lastPayload.isBlank()) {
+            buildDebugPolicyUpdate()
+        }
+        val payloads = mutableListOf<SyncBundlePayload>()
+        if (lastPayload.isNotBlank()) {
+            payloads += SyncBundlePayload(
+                kind = SyncBundlePayloadKind.POLICY_UPDATE,
+                label = "Verified-on-child policy update payload",
+                payloadText = lastPayload,
+            )
+        }
+        if (lastPairingInvitePayload.isNotBlank()) {
+            payloads += SyncBundlePayload(
+                kind = SyncBundlePayloadKind.PAIRING_INVITE,
+                label = "Debug pairing invite",
+                payloadText = lastPairingInvitePayload,
+            )
+        }
+        if (lastPairingAcceptancePayload.isNotBlank()) {
+            payloads += SyncBundlePayload(
+                kind = SyncBundlePayloadKind.PAIRING_ACCEPTANCE,
+                label = "Debug pairing acceptance",
+                payloadText = lastPairingAcceptancePayload,
+            )
+        }
+        payloads += SyncBundlePayload(
+            kind = SyncBundlePayloadKind.DIAGNOSTICS_TEXT,
+            label = "Parent setup note",
+            payloadText = listOf(
+                "Local debug parent instructions.",
+                "Child app must verify policy payload before using it.",
+                "Production sync will use encrypted relay later.",
+                "Not full protection.",
+            ).joinToString(separator = "\n"),
+        )
+        val now = System.currentTimeMillis()
+        val bundle = SyncBundle(
+            bundleId = "parent-sync-$now",
+            direction = SyncBundleDirection.PARENT_TO_CHILD,
+            kind = SyncBundleKind.PARENT_POLICY_UPDATE,
+            createdAtMillis = now,
+            sourceDeviceId = DeviceId(parentDeviceInput.text.toString().trim()),
+            targetDeviceId = targetDeviceInput.text.toString().trim()
+                .takeIf(String::isNotBlank)
+                ?.let(::DeviceId),
+            payloads = payloads,
+        )
+        lastParentSyncBundlePayload = syncBundleCodec.encode(bundle)
+        appendReportHistory(
+            type = "PARENT_SYNC_BUNDLE",
+            title = "Parent sync bundle",
+            payload = lastParentSyncBundlePayload,
+        )
+        parentSyncBundleOutput.text = createParentSyncBundleOutput()
+        stateStore.save(createSnapshot())
+    }
+
+    private fun copyParentSyncBundle() {
+        if (lastParentSyncBundlePayload.isBlank()) {
+            buildParentSyncBundle()
+        }
+        if (lastParentSyncBundlePayload.isBlank()) {
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain parent sync bundle", lastParentSyncBundlePayload))
+        appendReportHistory(
+            type = "PARENT_SYNC_BUNDLE_SHARED",
+            title = "Parent sync bundle copied",
+            payload = lastParentSyncBundlePayload,
+        )
+        parentSyncBundleOutput.text = "${createParentSyncBundleOutput()}\n\nCopied parent sync bundle."
+        stateStore.save(createSnapshot())
+    }
+
+    private fun shareParentSyncBundle() {
+        if (lastParentSyncBundlePayload.isBlank()) {
+            buildParentSyncBundle()
+        }
+        if (lastParentSyncBundlePayload.isBlank()) {
+            return
+        }
+        shareText(
+            title = "Share Vordain parent sync bundle",
+            text = "Local debug export\n$lastParentSyncBundlePayload",
+        )
+        appendReportHistory(
+            type = "PARENT_SYNC_BUNDLE_SHARED",
+            title = "Parent sync bundle shared",
+            payload = lastParentSyncBundlePayload,
+        )
+        parentSyncBundleOutput.text = "${createParentSyncBundleOutput()}\n\nShared parent sync bundle."
+        stateStore.save(createSnapshot())
+    }
+
+    private fun importChildSyncBundle() {
+        lastChildSyncBundlePayload = childSyncBundleInput.text.toString()
+        val result = syncBundleCodec.decode(lastChildSyncBundlePayload)
+        if (!result.accepted || result.bundle == null) {
+            decodedChildSyncBundle = null
+            childSyncBundleOutput.text = "Child sync bundle rejected: ${result.reason}"
+            stateStore.save(createSnapshot())
+            return
+        }
+        val bundle = result.bundle ?: run {
+            decodedChildSyncBundle = null
+            childSyncBundleOutput.text = "Child sync bundle rejected: ${result.reason}"
+            stateStore.save(createSnapshot())
+            return
+        }
+        if (bundle.direction != SyncBundleDirection.CHILD_TO_PARENT) {
+            decodedChildSyncBundle = null
+            childSyncBundleOutput.text = "Child sync bundle rejected: wrong direction ${bundle.direction}"
+            stateStore.save(createSnapshot())
+            return
+        }
+        decodedChildSyncBundle = bundle
+        bundle.payloads.forEach { payload ->
+            when (payload.kind) {
+                SyncBundlePayloadKind.CHILD_SECURITY_STATUS_REPORT -> {
+                    lastChildSecurityStatusReportPayload = payload.payloadText
+                    childSecurityReportInput.setText(payload.payloadText)
+                    decodeChildSecurityStatusReport()
+                }
+                SyncBundlePayloadKind.CHILD_ALERT_REPORT -> {
+                    lastChildAlertReportPayload = payload.payloadText
+                    childAlertReportInput.setText(payload.payloadText)
+                    decodeChildAlertReport()
+                }
+                SyncBundlePayloadKind.BYPASS_RISK_REPORT -> {
+                    lastBypassRiskReportPayload = payload.payloadText
+                    bypassRiskReportInput.setText(payload.payloadText)
+                    decodeBypassRiskReport()
+                }
+                SyncBundlePayloadKind.HARDENING_SETUP_REPORT -> {
+                    lastHardeningSetupReportPayload = payload.payloadText
+                    setupReportInput.setText(payload.payloadText)
+                    decodeHardeningSetupReport()
+                }
+                else -> Unit
+            }
+        }
+        appendReportHistory(
+            type = "CHILD_SYNC_BUNDLE",
+            title = "Child sync bundle",
+            payload = lastChildSyncBundlePayload,
+        )
+        childSyncBundleOutput.text = createChildSyncBundleImportOutput()
+        if (::childDnsGuardStatusOutput.isInitialized) {
+            childDnsGuardStatusOutput.text = createChildDnsGuardStatusOutput()
+        }
+        stateStore.save(createSnapshot())
+    }
+
+    private fun clearChildSyncBundleImport() {
+        lastChildSyncBundlePayload = ""
+        decodedChildSyncBundle = null
+        childSyncBundleInput.setText("")
+        childSyncBundleOutput.text = createChildSyncBundleImportOutput()
+        stateStore.save(createSnapshot())
+    }
+
+    private fun createParentSyncBundleOutput(): String {
+        if (lastParentSyncBundlePayload.isBlank()) {
+            return "No parent sync bundle built yet\nLocal debug bundle only.\nProduction sync will use encrypted relay later."
+        }
+        val bundle = syncBundleCodec.decode(lastParentSyncBundlePayload).bundle
+            ?: return "Parent sync bundle could not be decoded locally"
+        return buildString {
+            append("Parent sync bundle ready\n")
+            append("Bundle id: ${bundle.bundleId}\n")
+            append("Direction: ${bundle.direction}\n")
+            append("Target child: ${bundle.targetDeviceId?.value ?: "unspecified"}\n")
+            append("Payload count: ${bundle.payloads.size}\n")
+            bundle.payloads.forEach { payload ->
+                append("${payload.kind}: ${payload.label}\n")
+            }
+            append("Child app must verify policy payload before using it.\n")
+            append(bundle.warningText)
+        }.trimEnd()
+    }
+
+    private fun createChildSyncBundleImportOutput(): String {
+        val bundle = decodedChildSyncBundle
+            ?: syncBundleCodec.decode(lastChildSyncBundlePayload).bundle
+            ?: return "No child sync bundle imported yet\nLocal debug bundle only.\nProduction sync will use encrypted relay later."
+        decodedChildSyncBundle = bundle
+        return buildString {
+            append("Child sync bundle imported\n")
+            append("Bundle id: ${bundle.bundleId}\n")
+            append("Source child: ${bundle.sourceDeviceId.value}\n")
+            append("Created at: ${bundle.createdAtMillis}\n")
+            append("Included payloads:\n")
+            bundle.payloads.forEach { payload ->
+                append("- ${payload.kind}: ${payload.label}\n")
+                if (
+                    payload.kind == SyncBundlePayloadKind.ACTIVE_POLICY_SUMMARY ||
+                    payload.kind == SyncBundlePayloadKind.AUDIT_SUMMARY ||
+                    payload.kind == SyncBundlePayloadKind.DIAGNOSTICS_TEXT
+                ) {
+                    append(payload.payloadText.lineSequence().take(4).joinToString(separator = "\n"))
+                    append('\n')
+                }
+            }
+            append("Child status summary: ${decodedChildSecurityStatusReport?.overallStatus?.toDisplayLabel() ?: "Unknown"}\n")
+            append("Alert summary: ${decodedChildAlertReport?.summaryLabel ?: "Unknown"}\n")
+            append("Bypass risk summary: ${decodedBypassRiskReport?.summary?.overallStatus?.toDisplayLabel() ?: "Unknown"}\n")
+            append(bundle.warningText)
+        }.trimEnd()
+    }
+
     private fun createSnapshot(): ParentDebugStateSnapshot {
         return ParentDebugStateSnapshot(
             targetChildDeviceId = targetDeviceInput.text.toString(),
@@ -560,6 +817,8 @@ class ParentMainActivity : Activity() {
             latestChildSecurityStatusReportPayload = lastChildSecurityStatusReportPayload.takeIf(String::isNotBlank),
             latestBypassRiskReportPayload = lastBypassRiskReportPayload.takeIf(String::isNotBlank),
             latestChildAlertReportPayload = lastChildAlertReportPayload.takeIf(String::isNotBlank),
+            latestChildSyncBundlePayload = lastChildSyncBundlePayload.takeIf(String::isNotBlank),
+            latestParentSyncBundlePayload = lastParentSyncBundlePayload.takeIf(String::isNotBlank),
         )
     }
 

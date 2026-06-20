@@ -34,6 +34,7 @@ dependencies {
     implementation(project(":core:policy"))
     implementation(project(":core:policy-sync"))
     implementation(project(":core:status-report"))
+    implementation(project(":core:sync-bundle"))
     implementation(project(":features:child-status"))
     implementation(project(":features:setup-checklist"))
     implementation(project(":features:bypass-risk"))

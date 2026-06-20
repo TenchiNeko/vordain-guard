@@ -28,6 +28,8 @@ data class ChildDebugStateSnapshot(
     val latestHardeningSetupReportPayload: String? = null,
     val latestChildSecurityStatusReportPayload: String? = null,
     val latestBypassRiskReportPayload: String? = null,
+    val latestChildSyncBundlePayload: String? = null,
+    val latestParentSyncBundlePayload: String? = null,
 ) {
     companion object {
         const val DEFAULT_CHILD_DEVICE_ID = "child-debug-device"

@@ -41,6 +41,8 @@ class ParentDebugStateStore(context: Context) {
             ),
             latestBypassRiskReportPayload = preferences.getString(KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD, null),
             latestChildAlertReportPayload = preferences.getString(KEY_LATEST_CHILD_ALERT_REPORT_PAYLOAD, null),
+            latestChildSyncBundlePayload = preferences.getString(KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD, null),
+            latestParentSyncBundlePayload = preferences.getString(KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD, null),
         )
     }
 
@@ -70,6 +72,8 @@ class ParentDebugStateStore(context: Context) {
             )
             .putString(KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD, snapshot.latestBypassRiskReportPayload)
             .putString(KEY_LATEST_CHILD_ALERT_REPORT_PAYLOAD, snapshot.latestChildAlertReportPayload)
+            .putString(KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD, snapshot.latestChildSyncBundlePayload)
+            .putString(KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD, snapshot.latestParentSyncBundlePayload)
             .apply()
     }
 
@@ -96,6 +100,8 @@ class ParentDebugStateStore(context: Context) {
         const val KEY_LATEST_CHILD_SECURITY_STATUS_REPORT_PAYLOAD = "latest_child_security_status_report_payload"
         const val KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD = "latest_bypass_risk_report_payload"
         const val KEY_LATEST_CHILD_ALERT_REPORT_PAYLOAD = "latest_child_alert_report_payload"
+        const val KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD = "latest_child_sync_bundle_payload"
+        const val KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD = "latest_parent_sync_bundle_payload"
 
         val persistedKeys = setOf(
             KEY_TARGET_CHILD_DEVICE_ID,
@@ -119,6 +125,8 @@ class ParentDebugStateStore(context: Context) {
             KEY_LATEST_CHILD_SECURITY_STATUS_REPORT_PAYLOAD,
             KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD,
             KEY_LATEST_CHILD_ALERT_REPORT_PAYLOAD,
+            KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD,
+            KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD,
         )
     }
 }

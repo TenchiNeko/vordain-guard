@@ -97,23 +97,45 @@ Expected behavior:
 
 Recommended parent app order:
 
-1. Create pairing invite.
-2. Build DNS policy.
-3. Review hardening report.
-4. Review child status report.
+1. Build or edit the DNS policy.
+2. Export the parent sync bundle.
+3. Import the child sync bundle.
+4. Review child status, alerts, hardening, and bypass risk.
 5. Adjust policy.
 
 Recommended child app order:
 
-1. Pair/debug handoff.
-2. Request VPN permission.
+1. Import the parent sync bundle.
+2. Verify and apply the DNS policy.
 3. Complete hardening setup.
-4. Apply parent DNS policy.
-5. Start Basic DNS Guard.
-6. Generate child status report.
-7. Parent reviews report.
+4. Start Basic DNS Guard.
+5. Export the child sync bundle.
 
-The local MVP uses copy/paste and explicit share buttons. Production sync is not enabled yet.
+The local MVP uses copy/paste and explicit share buttons. Production sync is not enabled yet and will use encrypted relay later.
+
+## Local Sync Bundles
+
+Sync bundles combine the existing debug payloads into one copyable text payload.
+
+Parent-to-child bundle:
+
+1. In the parent app, build or edit the DNS policy.
+2. Tap Build parent sync bundle.
+3. Copy or share the parent sync bundle.
+4. In the child app, paste it into Import parent sync bundle.
+5. Tap Import parent sync bundle.
+6. Confirm the child reports that the policy payload was verified before use.
+
+Child-to-parent bundle:
+
+1. In the child app, review Basic DNS Guard status, alerts, hardening, bypass risk, active policy, and audit timeline.
+2. Tap Build child sync bundle.
+3. Copy or share the child sync bundle.
+4. In the parent app, paste it into Import child sync bundle.
+5. Tap Import child sync bundle.
+6. Review the included status, alert, hardening, bypass-risk, active policy, audit, and diagnostics sections.
+
+Bundles are local/debug only. They do not send anything automatically. Production sync will use encrypted relay later. The bundle flow is intended to avoid juggling separate policy, alert, status, setup, bypass-risk, and audit payloads during tablet testing.
 
 ## Parent DNS Policy Editor
 
@@ -155,6 +177,10 @@ If the stored policy payload fails verification, the child app falls back to the
 The child app can copy or share local debug setup, bypass-risk, child status, diagnostics, active policy diagnostics, and audit summaries. The parent app can import child reports and keeps a bounded local report history for generated policy payloads, pairing payloads, setup reports, bypass-risk reports, and child status reports.
 
 The child app can also copy/share a local alert report. The parent app can import child alert reports and keeps them in the same bounded local report history.
+
+The child app can export one child sync bundle containing the available child status, alert, hardening, bypass-risk, active policy, audit, and Basic DNS Guard diagnostics payloads. The parent app can import that bundle and stores the raw local bundle in bounded report history.
+
+The parent app can export one parent sync bundle containing the latest parent policy update and optional pairing payloads. The child app imports that bundle and still verifies the policy update before using it.
 
 The local audit timeline records explicit app actions such as starting DNS-only lab, applying a policy payload, generating reports, and copying diagnostics. It is not a passive monitor.
 

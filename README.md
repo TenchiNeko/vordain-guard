@@ -14,6 +14,8 @@ No silent bypass.
 
 Vordain Basic is bypass-resistant, but it is not full protection. It is designed to make DNS Guard state visible, enforce local policy while Basic DNS Guard is active, and alert parents quickly if DNS Guard is stopped, stale, degraded, or no longer confirmed.
 
+The local MVP now uses debug/local sync bundles for the parent-child loop. The parent app can bundle policy and pairing payloads into one parent-to-child text export, and the child app can bundle status, alerts, hardening, bypass-risk, active policy, audit, and diagnostics into one child-to-parent text export. Production sync is not enabled yet and will use encrypted relay later.
+
 The product loop is:
 
 ```text
