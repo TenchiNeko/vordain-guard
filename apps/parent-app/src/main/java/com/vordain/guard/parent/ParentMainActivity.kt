@@ -22,6 +22,9 @@ import com.vordain.guard.core.alertcenter.DebugChildAlertReportCodecResult
 import com.vordain.guard.core.auditlog.VordainDebugPayloadEnvelope
 import com.vordain.guard.core.auditlog.VordainDebugPayloadEnvelopeCodec
 import com.vordain.guard.core.auditlog.VordainDebugPayloadKind
+import com.vordain.guard.core.devrelay.DevRelayDirection
+import com.vordain.guard.core.devrelay.DevRelayMessage
+import com.vordain.guard.core.devrelay.DevRelayMessageStatus
 import com.vordain.guard.core.model.DeviceId
 import com.vordain.guard.core.model.DomainName
 import com.vordain.guard.core.model.PolicyId
@@ -97,6 +100,7 @@ class ParentMainActivity : Activity() {
     private val policyPresetFactory = PolicyPresetFactory()
     private val policyPreviewEngine = DefaultPolicyEngine()
     private val encryptedDnsResolverSeedList = EncryptedDnsResolverSeedList()
+    private val localDevRelayClient = ParentLocalDevRelayClient()
     private lateinit var stateStore: ParentDebugStateStore
     private lateinit var reportHistoryStore: ParentReportHistoryStore
     private lateinit var bundleInboxStore: ParentBundleInboxStore
@@ -131,6 +135,8 @@ class ParentMainActivity : Activity() {
     private lateinit var childSyncBundleInput: EditText
     private lateinit var childSyncBundleOutput: TextView
     private lateinit var parentSyncBundleOutput: TextView
+    private lateinit var relayBaseUrlInput: EditText
+    private lateinit var relayOutput: TextView
     private lateinit var bundleInboxOutput: TextView
     private lateinit var reportHistoryOutput: TextView
     private var lastPayload: String = ""
@@ -147,6 +153,8 @@ class ParentMainActivity : Activity() {
     private var decodedBypassRiskReport: DebugBypassRiskReport? = null
     private var lastChildSyncBundlePayload: String = ""
     private var lastParentSyncBundlePayload: String = ""
+    private var latestRelayMessageId: String = ""
+    private var latestRelayDiagnostics: String = "No local dev relay action yet."
     private var decodedChildSyncBundle: SyncBundle? = null
     private var selectedPolicyPreset: PolicyPreset = PolicyPreset.BASIC_DNS_GUARD
     private var reportHistory: List<ParentReportHistoryEntry> = emptyList()
@@ -207,6 +215,8 @@ class ParentMainActivity : Activity() {
         lastBypassRiskReportPayload = snapshot.latestBypassRiskReportPayload.orEmpty()
         lastChildSyncBundlePayload = snapshot.latestChildSyncBundlePayload.orEmpty()
         lastParentSyncBundlePayload = snapshot.latestParentSyncBundlePayload.orEmpty()
+        latestRelayMessageId = snapshot.latestRelayMessageId.orEmpty()
+        latestRelayDiagnostics = snapshot.latestRelayDiagnostics ?: latestRelayDiagnostics
         selectedPolicyPreset = snapshot.selectedPolicyPreset.toPolicyPreset()
         pairingSessionInput = editText(snapshot.pairingSessionId)
         parentDeviceInput = editText(snapshot.parentDeviceId)
@@ -219,6 +229,7 @@ class ParentMainActivity : Activity() {
         childAlertReportInput = editText(lastChildAlertReportPayload)
         bypassRiskReportInput = editText(lastBypassRiskReportPayload)
         childSyncBundleInput = editText(lastChildSyncBundlePayload)
+        relayBaseUrlInput = editText(snapshot.relayBaseUrl)
         targetDeviceInput = editText(snapshot.targetChildDeviceId)
         policyVersionInput = editText(snapshot.policyVersion)
         allowDomainsInput = editText(snapshot.allowDomainsText)
@@ -340,6 +351,25 @@ class ParentMainActivity : Activity() {
         })
         parentSyncBundleOutput = valueLabel(createParentSyncBundleOutput(), 13f)
         layout.addView(parentSyncBundleOutput)
+
+        layout.addView(sectionTitle("Local dev relay"))
+        layout.addView(valueLabel("Manual send/fetch only. Use on a trusted local network.", 14f))
+        layout.addView(valueLabel("Local dev relay only. Production sync will use encrypted relay later.", 14f))
+        layout.addView(labeledField("Relay base URL", relayBaseUrlInput))
+        layout.addView(button("Send parent sync bundle to relay") {
+            sendParentSyncBundleToRelay()
+        })
+        layout.addView(button("Fetch child bundles from relay") {
+            fetchChildBundlesFromRelay()
+        })
+        layout.addView(button("Ack latest fetched bundle") {
+            ackLatestRelayMessage()
+        })
+        layout.addView(button("Copy relay diagnostics") {
+            copyRelayDiagnostics()
+        })
+        relayOutput = valueLabel(createRelayOutput(), 13f)
+        layout.addView(relayOutput)
 
         layout.addView(sectionTitle("Child hardening setup"))
         layout.addView(valueLabel("This debug report is parent/child copy-paste only. Production will use encrypted delivery later.", 14f))
@@ -713,6 +743,161 @@ class ParentMainActivity : Activity() {
         stateStore.save(createSnapshot())
     }
 
+    private fun sendParentSyncBundleToRelay() {
+        if (lastParentSyncBundlePayload.isBlank()) {
+            buildParentSyncBundle()
+        }
+        val bundle = syncBundleCodec.decode(lastParentSyncBundlePayload).bundle
+        if (bundle == null) {
+            updateRelayDiagnostics("Parent sync bundle is not ready for relay send.")
+            return
+        }
+        val now = System.currentTimeMillis()
+        val message = DevRelayMessage(
+            messageId = "parent-relay-$now",
+            direction = DevRelayDirection.PARENT_TO_CHILD,
+            sourceDeviceId = DeviceId(parentDeviceInput.text.toString().trim().ifBlank {
+                ParentDebugStateSnapshot.DEFAULT_PARENT_DEVICE_ID
+            }),
+            targetDeviceId = DeviceId(targetDeviceInput.text.toString().trim().ifBlank {
+                ParentDebugStateSnapshot.DEFAULT_TARGET_CHILD_DEVICE_ID
+            }),
+            createdAtMillis = now,
+            bundleText = lastParentSyncBundlePayload,
+            status = DevRelayMessageStatus.PENDING,
+        )
+        updateRelayDiagnostics("Sending parent sync bundle to local dev relay...")
+        runRelayAction {
+            val result = localDevRelayClient.sendMessage(
+                baseUrl = relayBaseUrlInput.text.toString(),
+                message = message,
+            )
+            runOnUiThread {
+                if (result.success) {
+                    latestRelayMessageId = message.messageId
+                    appendReportHistory(
+                        type = "LOCAL_DEV_RELAY",
+                        title = "Parent relay send",
+                        payload = "Sent ${message.messageId} to ${message.targetDeviceId.value}",
+                    )
+                }
+                updateRelayDiagnostics(
+                    listOf(
+                        "Local dev relay send result",
+                        result.summary,
+                        "Message id: ${message.messageId}",
+                        "Target child: ${message.targetDeviceId.value}",
+                        "Manual send/fetch only.",
+                    ).joinToString(separator = "\n"),
+                )
+            }
+        }
+    }
+
+    private fun fetchChildBundlesFromRelay() {
+        updateRelayDiagnostics("Fetching child bundles from local dev relay...")
+        val targetDeviceId = parentDeviceInput.text.toString().trim().ifBlank {
+            ParentDebugStateSnapshot.DEFAULT_PARENT_DEVICE_ID
+        }
+        runRelayAction {
+            val result = localDevRelayClient.fetchMessages(
+                baseUrl = relayBaseUrlInput.text.toString(),
+                targetDeviceId = targetDeviceId,
+            )
+            runOnUiThread {
+                var importedCount = 0
+                val acceptedChildMessages = result.messages.filter { message ->
+                    message.direction == DevRelayDirection.CHILD_TO_PARENT
+                }
+                acceptedChildMessages.forEach { message ->
+                    latestRelayMessageId = message.messageId
+                    importChildSyncBundle(message.bundleText, sourceLabel = "Local dev relay")
+                    importedCount += 1
+                }
+                val skippedCount = result.messages.size - acceptedChildMessages.size
+                updateRelayDiagnostics(
+                    listOf(
+                        "Local dev relay fetch result",
+                        result.summary,
+                        "Target parent: $targetDeviceId",
+                        "Fetched messages: ${result.messages.size}",
+                        "Imported child bundles: $importedCount",
+                        "Skipped wrong direction: $skippedCount",
+                        "Latest message id: ${latestRelayMessageId.ifBlank { "none" }}",
+                    ).joinToString(separator = "\n"),
+                )
+            }
+        }
+    }
+
+    private fun ackLatestRelayMessage() {
+        val messageId = latestRelayMessageId.takeIf(String::isNotBlank)
+        if (messageId == null) {
+            updateRelayDiagnostics("No fetched/sent relay message id to acknowledge.")
+            return
+        }
+        updateRelayDiagnostics("Acknowledging local dev relay message $messageId...")
+        runRelayAction {
+            val result = localDevRelayClient.ackMessage(
+                baseUrl = relayBaseUrlInput.text.toString(),
+                messageId = messageId,
+            )
+            runOnUiThread {
+                updateRelayDiagnostics(
+                    listOf(
+                        "Local dev relay ack result",
+                        result.summary,
+                        "Message id: $messageId",
+                    ).joinToString(separator = "\n"),
+                )
+            }
+        }
+    }
+
+    private fun copyRelayDiagnostics() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vordain local dev relay diagnostics", createRelayOutput()))
+        updateRelayDiagnostics("${createRelayOutput()}\n\nCopied relay diagnostics.")
+    }
+
+    private fun runRelayAction(action: () -> Unit) {
+        Thread {
+            try {
+                action()
+            } catch (error: Exception) {
+                runOnUiThread {
+                    updateRelayDiagnostics(
+                        listOf(
+                            "Local dev relay error",
+                            error::class.java.simpleName,
+                            error.message.orEmpty(),
+                            "Use trusted local network only. Production sync will use encrypted relay later.",
+                        ).joinToString(separator = "\n"),
+                    )
+                }
+            }
+        }.start()
+    }
+
+    private fun updateRelayDiagnostics(text: String) {
+        latestRelayDiagnostics = text
+        if (::relayOutput.isInitialized) {
+            relayOutput.text = createRelayOutput()
+        }
+        stateStore.save(createSnapshot())
+    }
+
+    private fun createRelayOutput(): String {
+        return buildString {
+            append("Local dev relay only. Manual send/fetch; not production secure.\n")
+            append("Base URL: ${relayBaseUrlInput.text}\n")
+            append("Parent device id: ${parentDeviceInput.text}\n")
+            append("Child device id: ${targetDeviceInput.text}\n")
+            append("Latest relay message id: ${latestRelayMessageId.ifBlank { "none" }}\n")
+            append(latestRelayDiagnostics)
+        }.trimEnd()
+    }
+
     private fun importChildSyncBundle(
         payload: String = childSyncBundleInput.text.toString(),
         sourceLabel: String = "Copy/paste import",
@@ -906,6 +1091,15 @@ class ParentMainActivity : Activity() {
         if (decodedChildAlertReport != null) {
             items += MvpAcceptanceItem(MvpAcceptanceStep.PARENT_REVIEWS_ALERTS, MvpAcceptanceStatus.DONE)
         }
+        if (::relayBaseUrlInput.isInitialized && relayBaseUrlInput.text.toString().isNotBlank()) {
+            items += MvpAcceptanceItem(MvpAcceptanceStep.DEV_RELAY_RUNNING, MvpAcceptanceStatus.DONE)
+        }
+        if (latestRelayDiagnostics.contains("send", ignoreCase = true)) {
+            items += MvpAcceptanceItem(MvpAcceptanceStep.PARENT_SENT_POLICY_VIA_RELAY, MvpAcceptanceStatus.DONE)
+        }
+        if (latestRelayDiagnostics.contains("Imported child bundles:", ignoreCase = true)) {
+            items += MvpAcceptanceItem(MvpAcceptanceStep.PARENT_FETCHED_STATUS_FROM_RELAY, MvpAcceptanceStatus.DONE)
+        }
         val summary = mvpAcceptanceChecklist.summarize(items)
         return listOf(
             "Local MVP acceptance checklist: ${summary.completedCount}/${summary.totalCount} done",
@@ -968,6 +1162,11 @@ class ParentMainActivity : Activity() {
             latestChildAlertReportPayload = lastChildAlertReportPayload.takeIf(String::isNotBlank),
             latestChildSyncBundlePayload = lastChildSyncBundlePayload.takeIf(String::isNotBlank),
             latestParentSyncBundlePayload = lastParentSyncBundlePayload.takeIf(String::isNotBlank),
+            relayBaseUrl = relayBaseUrlInput.text.toString().ifBlank {
+                ParentDebugStateSnapshot.DEFAULT_RELAY_BASE_URL
+            },
+            latestRelayMessageId = latestRelayMessageId.takeIf(String::isNotBlank),
+            latestRelayDiagnostics = latestRelayDiagnostics.takeIf(String::isNotBlank),
         )
     }
 
@@ -1705,6 +1904,11 @@ class ParentMainActivity : Activity() {
             MvpAcceptanceStep.CHILD_EXPORTS_STATUS_BUNDLE -> "Child exports status bundle"
             MvpAcceptanceStep.PARENT_IMPORTS_STATUS_BUNDLE -> "Import child sync bundle"
             MvpAcceptanceStep.PARENT_REVIEWS_ALERTS -> "Review child alerts"
+            MvpAcceptanceStep.DEV_RELAY_RUNNING -> "Start local dev relay"
+            MvpAcceptanceStep.PARENT_SENT_POLICY_VIA_RELAY -> "Send policy via relay"
+            MvpAcceptanceStep.CHILD_FETCHED_POLICY_FROM_RELAY -> "Child fetches relay policy"
+            MvpAcceptanceStep.CHILD_SENT_STATUS_VIA_RELAY -> "Child sends status via relay"
+            MvpAcceptanceStep.PARENT_FETCHED_STATUS_FROM_RELAY -> "Fetch child status via relay"
         }
     }
 

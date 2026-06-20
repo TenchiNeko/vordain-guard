@@ -30,10 +30,16 @@ data class ChildDebugStateSnapshot(
     val latestBypassRiskReportPayload: String? = null,
     val latestChildSyncBundlePayload: String? = null,
     val latestParentSyncBundlePayload: String? = null,
+    val relayBaseUrl: String = DEFAULT_RELAY_BASE_URL,
+    val parentRelayDeviceId: String = DEFAULT_PARENT_RELAY_DEVICE_ID,
+    val latestRelayMessageId: String? = null,
+    val latestRelayDiagnostics: String? = null,
 ) {
     companion object {
         const val DEFAULT_CHILD_DEVICE_ID = "child-debug-device"
         const val DEFAULT_CHILD_DISPLAY_NAME = "Child Debug Tablet"
         const val DEFAULT_CHILD_FINGERPRINT = "debug-child-fingerprint"
+        const val DEFAULT_RELAY_BASE_URL = "http://192.168.68.81:8081"
+        const val DEFAULT_PARENT_RELAY_DEVICE_ID = "parent-debug-device"
     }
 }

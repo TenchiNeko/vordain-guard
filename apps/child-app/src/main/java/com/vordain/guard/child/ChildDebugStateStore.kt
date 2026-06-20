@@ -54,6 +54,12 @@ class ChildDebugStateStore(context: Context) {
             latestBypassRiskReportPayload = preferences.getString(KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD, null),
             latestChildSyncBundlePayload = preferences.getString(KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD, null),
             latestParentSyncBundlePayload = preferences.getString(KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD, null),
+            relayBaseUrl = preferences.getString(KEY_RELAY_BASE_URL, null)
+                ?: ChildDebugStateSnapshot.DEFAULT_RELAY_BASE_URL,
+            parentRelayDeviceId = preferences.getString(KEY_PARENT_RELAY_DEVICE_ID, null)
+                ?: ChildDebugStateSnapshot.DEFAULT_PARENT_RELAY_DEVICE_ID,
+            latestRelayMessageId = preferences.getString(KEY_LATEST_RELAY_MESSAGE_ID, null),
+            latestRelayDiagnostics = preferences.getString(KEY_LATEST_RELAY_DIAGNOSTICS, null),
         )
     }
 
@@ -94,6 +100,10 @@ class ChildDebugStateStore(context: Context) {
             .putString(KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD, snapshot.latestBypassRiskReportPayload)
             .putString(KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD, snapshot.latestChildSyncBundlePayload)
             .putString(KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD, snapshot.latestParentSyncBundlePayload)
+            .putString(KEY_RELAY_BASE_URL, snapshot.relayBaseUrl)
+            .putString(KEY_PARENT_RELAY_DEVICE_ID, snapshot.parentRelayDeviceId)
+            .putString(KEY_LATEST_RELAY_MESSAGE_ID, snapshot.latestRelayMessageId)
+            .putString(KEY_LATEST_RELAY_DIAGNOSTICS, snapshot.latestRelayDiagnostics)
             .apply()
     }
 
@@ -128,6 +138,10 @@ class ChildDebugStateStore(context: Context) {
         const val KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD = "latest_bypass_risk_report_payload"
         const val KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD = "latest_child_sync_bundle_payload"
         const val KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD = "latest_parent_sync_bundle_payload"
+        const val KEY_RELAY_BASE_URL = "relay_base_url"
+        const val KEY_PARENT_RELAY_DEVICE_ID = "parent_relay_device_id"
+        const val KEY_LATEST_RELAY_MESSAGE_ID = "latest_relay_message_id"
+        const val KEY_LATEST_RELAY_DIAGNOSTICS = "latest_relay_diagnostics"
 
         val persistedKeys = setOf(
             KEY_CHILD_DEVICE_ID,
@@ -159,6 +173,10 @@ class ChildDebugStateStore(context: Context) {
             KEY_LATEST_BYPASS_RISK_REPORT_PAYLOAD,
             KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD,
             KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD,
+            KEY_RELAY_BASE_URL,
+            KEY_PARENT_RELAY_DEVICE_ID,
+            KEY_LATEST_RELAY_MESSAGE_ID,
+            KEY_LATEST_RELAY_DIAGNOSTICS,
         )
     }
 }

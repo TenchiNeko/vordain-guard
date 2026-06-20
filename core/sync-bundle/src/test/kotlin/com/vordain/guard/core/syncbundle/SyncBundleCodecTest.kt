@@ -235,6 +235,27 @@ class SyncBundleCodecTest {
         assertEquals(MvpAcceptanceStep.CHILD_IMPORTS_SYNC_BUNDLE, summary.nextRecommendedStep)
     }
 
+    @Test
+    fun checklistSuggestsDevRelayAfterLocalBundleFlow() {
+        val localFlowSteps = MvpAcceptanceStep.entries
+            .takeWhile { step -> step != MvpAcceptanceStep.DEV_RELAY_RUNNING }
+            .map { step -> MvpAcceptanceItem(step, MvpAcceptanceStatus.DONE) }
+
+        val summary = acceptanceChecklist.summarize(localFlowSteps)
+
+        assertEquals(MvpAcceptanceStep.DEV_RELAY_RUNNING, summary.nextRecommendedStep)
+    }
+
+    @Test
+    fun relayStepsCompleteMarksLocalRelayFlowComplete() {
+        val summary = acceptanceChecklist.summarize(
+            MvpAcceptanceStep.entries.map { step -> MvpAcceptanceItem(step, MvpAcceptanceStatus.DONE) },
+        )
+
+        assertEquals(MvpAcceptanceStatus.DONE, summary.status)
+        assertNull(summary.nextRecommendedStep)
+    }
+
     private fun childBundle(): SyncBundle {
         return SyncBundle(
             bundleId = "child-bundle-1",

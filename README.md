@@ -18,6 +18,8 @@ The local MVP now uses debug/local sync bundles for the parent-child loop. The p
 
 Android share-sheet import is supported for these local sync bundles. Copy/paste remains available as a fallback, and each app keeps a local bundle inbox summary so accepted, rejected, and wrong-direction imports are visible during tablet testing.
 
+A local dev relay is also available for manual send/fetch on a trusted LAN. It uses an in-memory JVM server and Android `HttpURLConnection` clients to exchange the same debug sync bundles. It is local/debug only, has no production encryption or authentication, and production sync will use encrypted relay later.
+
 The product loop is:
 
 ```text

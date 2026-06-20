@@ -43,6 +43,10 @@ class ParentDebugStateStore(context: Context) {
             latestChildAlertReportPayload = preferences.getString(KEY_LATEST_CHILD_ALERT_REPORT_PAYLOAD, null),
             latestChildSyncBundlePayload = preferences.getString(KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD, null),
             latestParentSyncBundlePayload = preferences.getString(KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD, null),
+            relayBaseUrl = preferences.getString(KEY_RELAY_BASE_URL, null)
+                ?: ParentDebugStateSnapshot.DEFAULT_RELAY_BASE_URL,
+            latestRelayMessageId = preferences.getString(KEY_LATEST_RELAY_MESSAGE_ID, null),
+            latestRelayDiagnostics = preferences.getString(KEY_LATEST_RELAY_DIAGNOSTICS, null),
         )
     }
 
@@ -74,6 +78,9 @@ class ParentDebugStateStore(context: Context) {
             .putString(KEY_LATEST_CHILD_ALERT_REPORT_PAYLOAD, snapshot.latestChildAlertReportPayload)
             .putString(KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD, snapshot.latestChildSyncBundlePayload)
             .putString(KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD, snapshot.latestParentSyncBundlePayload)
+            .putString(KEY_RELAY_BASE_URL, snapshot.relayBaseUrl)
+            .putString(KEY_LATEST_RELAY_MESSAGE_ID, snapshot.latestRelayMessageId)
+            .putString(KEY_LATEST_RELAY_DIAGNOSTICS, snapshot.latestRelayDiagnostics)
             .apply()
     }
 
@@ -102,6 +109,9 @@ class ParentDebugStateStore(context: Context) {
         const val KEY_LATEST_CHILD_ALERT_REPORT_PAYLOAD = "latest_child_alert_report_payload"
         const val KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD = "latest_child_sync_bundle_payload"
         const val KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD = "latest_parent_sync_bundle_payload"
+        const val KEY_RELAY_BASE_URL = "relay_base_url"
+        const val KEY_LATEST_RELAY_MESSAGE_ID = "latest_relay_message_id"
+        const val KEY_LATEST_RELAY_DIAGNOSTICS = "latest_relay_diagnostics"
 
         val persistedKeys = setOf(
             KEY_TARGET_CHILD_DEVICE_ID,
@@ -127,6 +137,9 @@ class ParentDebugStateStore(context: Context) {
             KEY_LATEST_CHILD_ALERT_REPORT_PAYLOAD,
             KEY_LATEST_CHILD_SYNC_BUNDLE_PAYLOAD,
             KEY_LATEST_PARENT_SYNC_BUNDLE_PAYLOAD,
+            KEY_RELAY_BASE_URL,
+            KEY_LATEST_RELAY_MESSAGE_ID,
+            KEY_LATEST_RELAY_DIAGNOSTICS,
         )
     }
 }

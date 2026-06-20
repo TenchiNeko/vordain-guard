@@ -36,6 +36,7 @@ dependencies {
     implementation(project(":core:policy-sync"))
     implementation(project(":core:status-report"))
     implementation(project(":core:sync-bundle"))
+    implementation(project(":core:dev-relay"))
     implementation(project(":features:pairing"))
     implementation(project(":features:parent-dashboard"))
     implementation(project(":features:policy-editor"))

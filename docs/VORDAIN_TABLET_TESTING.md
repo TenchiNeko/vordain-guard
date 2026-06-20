@@ -175,6 +175,72 @@ The apps show a local MVP checklist summary to keep tablet testing in order:
 
 This checklist is a local testing aid. It is not a production protection claim.
 
+## Local Dev Relay
+
+The local dev relay removes most copy/paste steps during tablet testing while staying manual and debug-only.
+
+Start the relay on the development machine:
+
+```bash
+tools/run_dev_relay.sh
+```
+
+The default process binds to port `8081` and prints the tablet URL. For the current lab network, use:
+
+```text
+http://192.168.68.81:8081
+```
+
+Parent-to-child relay flow:
+
+1. Start the local dev relay.
+2. Open the parent app.
+3. Build or edit the DNS policy.
+4. Build the parent sync bundle.
+5. In Local dev relay, confirm the relay base URL, parent device id, and child device id.
+6. Tap Send parent sync bundle to relay.
+7. Open the child app.
+8. In Local dev relay, confirm the same base URL and parent device id.
+9. Tap Fetch parent bundles from relay.
+10. Confirm the child import result says the policy payload was verified before use.
+11. Optionally ack the latest fetched bundle.
+
+Child-to-parent relay flow:
+
+1. Open the child app.
+2. Build the child sync bundle after reviewing Basic DNS Guard status, alerts, hardening, bypass risk, active policy, and audit timeline.
+3. In Local dev relay, tap Send child sync bundle to relay.
+4. Open the parent app.
+5. In Local dev relay, tap Fetch child bundles from relay.
+6. Confirm the parent view imports status, alerts, hardening, bypass risk, policy summary, audit summary, and diagnostics when present.
+7. Optionally ack the latest fetched bundle.
+
+Relay troubleshooting:
+
+* Cannot connect: confirm the development machine and tablet are on the same LAN and the relay URL uses the development machine IP.
+* Wrong IP: update the relay base URL in both apps.
+* Firewall or port issue: allow local LAN access to port `8081` or set `VORDAIN_DEV_RELAY_PORT`.
+* Wrong direction bundle: parent app fetches child-to-parent messages; child app fetches parent-to-child messages.
+* Missing policy update: rebuild the parent sync bundle after building a DNS policy.
+* Relay restarted: the relay is in-memory, so queued messages are lost.
+
+Security notes:
+
+* Local dev relay only.
+* Manual send/fetch only; no background polling.
+* No production encryption or authentication yet.
+* Trusted LAN only; do not expose it to the internet.
+* Do not put PINs, account secrets, or private notes into debug bundle text.
+* Production sync will use encrypted relay later.
+
+The local MVP checklist now also includes the relay loop:
+
+1. Start local dev relay.
+2. Parent sends policy via relay.
+3. Child fetches policy from relay.
+4. Child sends status via relay.
+5. Parent fetches status via relay.
+
 ## Parent DNS Policy Editor
 
 Use the parent app's DNS policy editor to build a practical lab policy:

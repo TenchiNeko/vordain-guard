@@ -1,5 +1,5 @@
-# Relay API
+# Local Dev Relay API
 
-Placeholder for a future blind encrypted relay API.
+Local JVM relay for manual Vordain Guard debug sync bundles.
 
-The backend must not receive readable child activity. Payloads should already be encrypted for the destination parent device before entering any relay API.
+It stores messages in memory only and is intended for trusted local network testing. It is not production sync and does not provide production security.
