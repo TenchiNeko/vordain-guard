@@ -11,9 +11,10 @@ Before distributing debug APKs:
 * `tools/export_beta_apks.sh` produces APKs and `SHA256SUMS`.
 * `git ls-files local.properties` prints nothing.
 * `git ls-files "*.apk"` prints nothing.
-* No root `LICENSE` file is added.
+* Root `LICENSE` is the Apache License 2.0.
 * Known limitations are reviewed with testers.
-* Local dev relay is not exposed to the internet.
+* Every checked-in Android manifest disallows cleartext traffic.
+* Local dev relay uses the loopback default and is not exposed to the internet.
 
 Beta APKs:
 

@@ -7,7 +7,7 @@
         android:allowBackup="false"
         android:label="Vordain Guard Child Beta"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".ChildMainActivity"
             android:exported="true"

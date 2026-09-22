@@ -46,11 +46,11 @@ Current primary sections:
 
 Some actions remain intentionally available in multiple paths:
 
-* Sync bundle copy/share remains available beside local dev relay because relay is debug-only and can be offline.
+* Sync bundle copy/share is the stock transfer path; the relay UI remains an unconfigured reference surface.
 * Status, alert, setup, and bypass reports remain importable individually for troubleshooting, while sync bundles are the preferred beta flow.
 * DNS-only lab and full-tunnel lab tools remain below the primary Basic DNS Guard path for developer testing.
 
-No duplicate heading was found that safely hid a second implementation of the same operation. The beta polish keeps existing working features accessible and groups the relay path as the preferred sync path.
+No duplicate heading was found that safely hid a second implementation of the same operation. The beta polish keeps existing working features accessible and treats manual share/copy as the primary sync path.
 
 ## Current Primary Flow
 
@@ -59,8 +59,8 @@ Parent:
 1. Identify parent and child device IDs.
 2. Build and preview DNS policy.
 3. Build parent sync bundle.
-4. Send by local dev relay or Android share sheet.
-5. Fetch/import child sync bundle.
+4. Send by Android share sheet or copy/paste.
+5. Import the child sync bundle.
 6. Review child status, alerts, hardening, bypass risk, policy summary, and heartbeat.
 
 Child:
@@ -104,14 +104,14 @@ Current sync paths:
 * Parent-to-child Android share-sheet sync bundle.
 * Child-to-parent Android share-sheet sync bundle.
 * Copy/paste fallback for both directions.
-* Manual local dev relay send/fetch/ack for both directions.
+* Unconfigured local dev relay reference UI for contributors supplying a secure endpoint.
 
-The relay is in-memory, local/debug only, and not production secure.
+The relay is in-memory, local/debug only, and not production secure. The stock Android configuration rejects cleartext traffic and provides no default relay URL.
 
 ## Known UX Gaps For Tablet Testing
 
 * Single long-scroll activities are functional but dense.
 * Individual report import sections are still present for troubleshooting.
-* Local dev relay requires manual IP/port configuration.
+* Local dev relay requires a contributor-supplied HTTPS endpoint or an uncommitted local override.
 * Runtime status is local and conservative; stale status is shown as Unknown/Needs attention.
 * Basic DNS Guard remains DNS-only and not full protection.

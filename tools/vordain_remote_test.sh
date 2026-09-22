@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${VORDAIN_RELAY_URL:-http://192.168.68.81:8081}"
+BASE_URL="${VORDAIN_RELAY_URL:-http://127.0.0.1:8081}"
 SERVER_DEVICE_ID="${VORDAIN_REMOTE_TEST_SERVER_ID:-server-debug-device}"
 PARENT_DEVICE_ID="${VORDAIN_PARENT_DEVICE_ID:-parent-debug-device}"
 CHILD_DEVICE_ID="${VORDAIN_CHILD_DEVICE_ID:-child-debug-device}"

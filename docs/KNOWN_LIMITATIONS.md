@@ -11,7 +11,7 @@ Current limits:
 * Direct-IP traffic may bypass DNS policy.
 * DoH endpoint seed blocking is non-exhaustive.
 * Cached DNS and app-level encrypted DNS can still require Android hardening.
-* Local dev relay is in-memory and not production secure.
+* Local dev relay is in-memory reference infrastructure, disabled end to end in the stock Android configuration, and not production secure.
 * No production encryption or authentication is implemented.
 * No automatic background cloud sync exists.
 * No MDM or Android Enterprise management is implemented.

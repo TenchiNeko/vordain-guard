@@ -44,7 +44,7 @@ data class ChildDebugStateSnapshot(
         const val DEFAULT_CHILD_DEVICE_ID = "child-debug-device"
         const val DEFAULT_CHILD_DISPLAY_NAME = "Child Debug Tablet"
         const val DEFAULT_CHILD_FINGERPRINT = "debug-child-fingerprint"
-        const val DEFAULT_RELAY_BASE_URL = "http://192.168.68.81:8081"
+        const val DEFAULT_RELAY_BASE_URL = ""
         const val DEFAULT_PARENT_RELAY_DEVICE_ID = "parent-debug-device"
         const val DEFAULT_RUNTIME_STATUS = "Unknown"
         const val DEFAULT_HEARTBEAT_STATUS = "Heartbeat missing"

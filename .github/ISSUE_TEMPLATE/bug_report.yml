@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible problem in the experimental project
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Vordain Guard is an unfinished reference project, not a supported product.
+        Never include real child data, credentials, private family information, or exploit details here. Read SECURITY.md for security reports.
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or branch
+      description: The commit SHA or branch where the problem occurs.
+      placeholder: main at abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Parent app
+        - Child app
+        - VPN / DNS engine
+        - Policy core
+        - Local dev relay
+        - Build / tooling
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, JDK, Android version, device/emulator, and build variant as relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use only synthetic data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, real child/family data, private addresses, and sensitive logs.
+          required: true
+        - label: This is not a confidential security report.
+          required: true
+

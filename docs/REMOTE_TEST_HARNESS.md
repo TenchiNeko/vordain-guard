@@ -1,8 +1,8 @@
 # Vordain Guard Remote Test Harness
 
-This is a debug/local tablet testing harness for the local dev relay. It is not production sync, not a remote administration feature, and not a hidden controller.
+This directory documents reference code for a debug/local tablet testing harness. It is not production sync, a remote administration feature, or a hidden controller.
 
-Production sync will use encrypted relay later. Release app builds include no active remote test controller behavior.
+The public Android configuration intentionally leaves the relay URL blank and rejects cleartext traffic in every build variant. The bundled apps therefore do not connect to the HTTP relay out of the box. Contributors who need end-to-end testing must supply their own HTTPS endpoint or keep any local-only configuration in an uncommitted fork. Production sync will use an encrypted relay later, and release builds include no active remote-test controller behavior.
 
 ## Safety Boundaries
 
@@ -13,7 +13,9 @@ Production sync will use encrypted relay later. Release app builds include no ac
 - The harness does not install or uninstall apps.
 - The harness does not bypass Android VPN permission prompts.
 - The harness does not inspect HTTPS content, packet contents, browsing history, app usage, screenshots, messages, credentials, passwords, or PIN input.
-- Use only on a trusted local lab network.
+- The relay has no authentication or TLS. Its safe default is loopback-only.
+- Use a specific LAN bind only on a trusted, isolated lab network. Never expose the relay to the internet.
+- No checked-in Android manifest opts into cleartext traffic.
 
 ## Relay Endpoints
 
@@ -44,19 +46,17 @@ backend/relay-api/.dev-relay-events.ndjson
 
 The log records request time, method, path, remote address, accepted/rejected result, message id, command id, result id, and source/target device ids when available. It does not log bundle bodies, browsing content, traffic content, packet bytes, credentials, passwords, or PIN input.
 
-## Tablet Setup
+## Optional end-to-end setup
 
-1. Start the local dev relay:
+The checked-in configuration supports server-side relay testing only. To connect Android devices, first provide a trusted HTTPS front end or make your own uncommitted local-only networking configuration. That opt-in is deliberately not part of the public repository.
 
-   ```bash
-   ./tools/run_dev_relay.sh
-   ```
+For server-side checks, start the relay on loopback:
 
-2. Open the parent app and child app on the tablets.
-3. Confirm both apps point at the local relay URL, for example `http://192.168.68.81:8081`.
-4. In each app, open the Local dev relay section.
-5. Tap **Enable remote test mode**.
-6. Leave the app visible while testing. The debug controller polls every few seconds only while this mode is enabled.
+```bash
+./tools/run_dev_relay.sh
+```
+
+After supplying a secure endpoint, enter its `https://` URL in both debug apps, visibly enable remote test mode, and leave the apps visible while testing. The debug controller polls only while that mode is enabled.
 
 ## Server Commands
 
@@ -80,7 +80,7 @@ tools/vordain_remote_test.sh summary
 Optional environment variables:
 
 ```bash
-VORDAIN_RELAY_URL=http://192.168.68.81:8081
+VORDAIN_RELAY_URL=https://YOUR_TEST_RELAY
 VORDAIN_PARENT_DEVICE_ID=parent-debug-device
 VORDAIN_CHILD_DEVICE_ID=child-debug-device
 ```
@@ -113,3 +113,5 @@ The active controllers live only in Android `src/debug` source sets:
 - `apps/child-app/src/debug/.../ChildRemoteTestController.kt`
 
 Release source sets contain no-op implementations with the same API. Tests verify those release stubs do not include polling implementation markers.
+
+Every checked-in Android manifest rejects cleartext traffic, the default relay URL is blank, and the verification script fails if a manifest enables cleartext. The HTTP relay and command script remain as auditable reference infrastructure; Android end-to-end use requires an explicit contributor-owned secure configuration.
