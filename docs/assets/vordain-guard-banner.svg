@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Vordain Guard</title>
+  <desc id="desc">Android-first DNS safety research prototype</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="0.55" stop-color="#101b36"/>
+      <stop offset="1" stop-color="#102b2b"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c5cff"/>
+      <stop offset="1" stop-color="#27d3a2"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#27d3a2" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#27d3a2" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M36 0H0V36" fill="none" stroke="#9ab4d0" stroke-opacity="0.06"/>
+    </pattern>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="360" rx="28" fill="url(#background)"/>
+  <rect width="1200" height="360" rx="28" fill="url(#grid)"/>
+  <circle cx="1010" cy="85" r="260" fill="url(#glow)"/>
+  <circle cx="165" cy="180" r="150" fill="#7c5cff" opacity="0.08"/>
+
+  <g filter="url(#shadow)">
+    <path d="M170 46 276 84v88c0 70-41 121-106 153-65-32-106-83-106-153V84Z" fill="url(#shield)"/>
+    <path d="M170 67 255 97v75c0 56-31 98-85 128-54-30-85-72-85-128V97Z" fill="#0b1630" opacity="0.88"/>
+    <path d="m119 139 51 105 53-105" fill="none" stroke="#f5fbff" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="170" cy="119" r="10" fill="#27d3a2"/>
+  </g>
+
+  <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
+    <text x="342" y="142" fill="#f6f9ff" font-size="66" font-weight="760" letter-spacing="-1.5">Vordain Guard</text>
+    <text x="345" y="193" fill="#b9c8df" font-size="27" font-weight="450">Android-first DNS safety research prototype</text>
+    <g transform="translate(345 235)">
+      <rect width="291" height="46" rx="23" fill="#152440" stroke="#50698e" stroke-opacity="0.65"/>
+      <circle cx="24" cy="23" r="6" fill="#ffb84d"/>
+      <text x="43" y="30" fill="#e7eef9" font-size="17" font-weight="700" letter-spacing="1.4">EXPERIMENTAL • LOCAL MVP</text>
+    </g>
+    <text x="1038" y="316" text-anchor="end" fill="#6f88a8" font-size="15" font-weight="650" letter-spacing="2.4">POLICY • ENFORCEMENT • VISIBILITY</text>
+  </g>
+</svg>
+

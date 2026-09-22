@@ -54,4 +54,4 @@ cp "${parent_apk}" "${download_dir}/vordain-guard-parent-debug.apk"
 
 echo "Debug APKs copied to ${download_dir}"
 echo "Serve locally for tablet download with:"
-echo "cd ${download_dir} && python3 -m http.server 8080 --bind 192.168.68.81"
+echo "cd ${download_dir} && python3 -m http.server 8080 --bind YOUR_LAN_IP"

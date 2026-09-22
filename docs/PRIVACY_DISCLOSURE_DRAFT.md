@@ -6,7 +6,7 @@ The child device processes DNS-domain-level requests locally so blocked domains 
 
 The beta does not store browsing history, full URLs, raw packet contents, app usage logs, screenshots, message content, credentials, passwords, PINs, or passive telemetry.
 
-The local dev relay is a manual debug tool for parent/child sync bundles. It is in-memory, cleartext HTTP on a trusted local network, and not production secure. Production sync is not enabled in this beta and is planned to use encrypted relay later.
+The local dev relay is in-memory, loopback-only reference infrastructure and is not production secure. Public Android builds reject cleartext traffic and ship with no relay URL, so they do not connect to it out of the box. Production sync is not enabled in this beta and is planned to use an encrypted relay later.
 
 Parents explicitly share or fetch local beta reports. Readable child activity is not intended for company servers.
 

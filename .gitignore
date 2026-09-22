@@ -11,3 +11,13 @@ captures/
 *.keystore
 *.pem
 *.p12
+*.key
+*.der
+*.crt
+*.cer
+
+# Local environment and secret-bearing files
+.env
+.env.*
+!.env.example
+secrets.properties

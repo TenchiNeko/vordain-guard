@@ -3,14 +3,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-HOST="${VORDAIN_DEV_RELAY_HOST:-0.0.0.0}"
+HOST="${VORDAIN_DEV_RELAY_HOST:-127.0.0.1}"
 PORT="${VORDAIN_DEV_RELAY_PORT:-8081}"
 
 cat <<EOF
 Starting Vordain Guard local dev relay.
 
-Local debug only. Use on a trusted local network and do not expose this port to the internet.
-Default URL for tablet testing: http://192.168.68.81:${PORT}
+Unauthenticated cleartext debug service. The safe default is loopback only.
+The public Android configuration does not connect to this HTTP service.
+Keep the relay on loopback and never expose its port to the internet.
+Default local URL: http://127.0.0.1:${PORT}
 Bind: ${HOST}:${PORT}
 
 EOF

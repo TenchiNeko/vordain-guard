@@ -19,7 +19,7 @@ tools/export_beta_apks.sh
 The script builds debug APKs, copies them to `~/tablet-download`, writes `SHA256SUMS`, and prints a local server command:
 
 ```bash
-cd ~/tablet-download && python3 -m http.server 8080 --bind 192.168.68.81
+cd ~/tablet-download && python3 -m http.server 8080 --bind YOUR_LAN_IP
 ```
 
 If APKs are already built, you can skip the Gradle build:
@@ -183,89 +183,24 @@ This checklist is a local testing aid. It is not a production protection claim.
 
 ## Local Dev Relay
 
-The local dev relay removes most copy/paste steps during tablet testing while staying manual and debug-only.
+The repository retains an in-memory HTTP relay and an allowlisted remote-test harness as reference infrastructure. It is disabled end to end in the public Android configuration:
 
-Start the relay on the development machine:
+* every checked-in Android manifest rejects cleartext traffic;
+* both apps ship with a blank relay URL;
+* release controllers remain no-op implementations.
 
-```bash
-tools/run_dev_relay.sh
-```
+Use the Android share sheet or copy/paste for stock tablet testing. A contributor who wants relay testing must provide a trusted HTTPS endpoint or keep a local networking override outside the repository. The relay has no authentication or TLS and must never be exposed to the internet.
 
-The default process binds to port `8081` and prints the tablet URL. For the current lab network, use:
-
-```text
-http://192.168.68.81:8081
-```
-
-Parent-to-child relay flow:
-
-1. Start the local dev relay.
-2. Open the parent app.
-3. Build or edit the DNS policy.
-4. Build the parent sync bundle.
-5. In Local dev relay, confirm the relay base URL, parent device id, and child device id.
-6. Tap Send parent sync bundle to relay.
-7. Open the child app.
-8. In Local dev relay, confirm the same base URL and parent device id.
-9. Tap Fetch parent bundles from relay.
-10. Confirm the child import result says the policy payload was verified before use.
-11. Optionally ack the latest fetched bundle.
-
-Child-to-parent relay flow:
-
-1. Open the child app.
-2. Build the child sync bundle after reviewing Basic DNS Guard status, alerts, hardening, bypass risk, active policy, and audit timeline.
-3. In Local dev relay, tap Send child sync bundle to relay.
-4. Open the parent app.
-5. In Local dev relay, tap Fetch child bundles from relay.
-6. Confirm the parent view imports status, alerts, hardening, bypass risk, policy summary, audit summary, and diagnostics when present.
-7. Optionally ack the latest fetched bundle.
-
-Relay troubleshooting:
-
-* Cannot connect: confirm the development machine and tablet are on the same LAN and the relay URL uses the development machine IP.
-* Wrong IP: update the relay base URL in both apps.
-* Firewall or port issue: allow local LAN access to port `8081` or set `VORDAIN_DEV_RELAY_PORT`.
-* Wrong direction bundle: parent app fetches child-to-parent messages; child app fetches parent-to-child messages.
-* Missing policy update: rebuild the parent sync bundle after building a DNS policy.
-* Relay restarted: the relay is in-memory, so queued messages are lost.
-
-Security notes:
-
-* Local dev relay only.
-* Normal sync remains manual send/fetch only; the remote test harness polls only while visibly enabled for local debugging.
-* No production encryption or authentication yet.
-* Trusted LAN only; do not expose it to the internet.
-* Do not put PINs, account secrets, or private notes into debug bundle text.
-* Production sync will use encrypted relay later.
-
-Remote test harness:
-
-1. Start the local dev relay.
-2. Open both tablet apps and leave them visible.
-3. In each app's Local dev relay section, tap Enable remote test mode.
-4. From the development machine, run commands such as:
+Server-side reference commands remain available on loopback:
 
 ```bash
+./tools/run_dev_relay.sh
 tools/vordain_remote_test.sh parent-health
 tools/vordain_remote_test.sh child-health
-tools/vordain_remote_test.sh parent-send-policy
-tools/vordain_remote_test.sh child-fetch-policy
-tools/vordain_remote_test.sh child-import-policy
-tools/vordain_remote_test.sh child-send-status
-tools/vordain_remote_test.sh parent-fetch-status
 tools/vordain_remote_test.sh summary
 ```
 
-Remote test mode is debug/local only and visibly enabled in-app. It polls only while enabled, uses allowlisted app-level actions, does not run shell commands, does not tap arbitrary UI coordinates, and does not bypass Android VPN permission prompts. See [REMOTE_TEST_HARNESS.md](REMOTE_TEST_HARNESS.md).
-
-The local MVP checklist now also includes the relay loop:
-
-1. Start local dev relay.
-2. Parent sends policy via relay.
-3. Child fetches policy from relay.
-4. Child sends status via relay.
-5. Parent fetches status via relay.
+If securely configured by a contributor, remote test mode must remain visibly enabled, allowlisted, debug-only, and incapable of running shell commands, tapping arbitrary coordinates, or bypassing Android VPN permission prompts. See [REMOTE_TEST_HARNESS.md](REMOTE_TEST_HARNESS.md).
 
 ## Parent DNS Policy Editor
 
@@ -374,4 +309,4 @@ This build is not full protection:
 
 ## Third-Party Notices
 
-No root `LICENSE` file is added by these local MVP steps. `THIRD_PARTY_NOTICES.md` is a non-exhaustive record for development tooling and dependency notices, including Gradle wrapper/build tooling under Apache 2.0.
+The repository source is licensed under Apache-2.0. `THIRD_PARTY_NOTICES.md` records development tooling and dependency notices separately.

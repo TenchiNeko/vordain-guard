@@ -1,0 +1,32 @@
+name: Design or feature proposal
+description: Propose a scoped improvement to the reference project
+title: "[Proposal]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Proposals must preserve the privacy, local-enforcement, and honest-claims boundaries in CONTRIBUTING.md.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Privacy and safety impact
+      description: Explain effects on data collection, network exposure, release builds, and bypass claims.
+    validations:
+      required: true
+
